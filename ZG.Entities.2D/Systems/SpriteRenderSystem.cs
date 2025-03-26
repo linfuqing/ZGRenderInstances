@@ -5,6 +5,7 @@ using Unity.Entities.Content;
 using Unity.Mathematics;
 using Unity.Transforms;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 public struct SpriteRenderMaterial : ISharedComponentData
 {
@@ -32,6 +33,14 @@ public partial class SpriteRenderSystem : SystemBase
     private Mesh __mesh;
     private GraphicsBuffer __graphicsBuffer;
     private MaterialPropertyBlock __materialPropertyBlock;
+    private CommandBuffer __commandBuffer;
+    private Matrix4x4[] __matrices;
+
+    public static CommandBuffer commandBuffer
+    {
+        get => World.DefaultGameObjectInjectionWorld.GetExistingSystemManaged<SpriteRenderSystem>()
+            .__commandBuffer;
+    }
     
     public static Mesh GenerateQuad()
     {
@@ -91,6 +100,10 @@ public partial class SpriteRenderSystem : SystemBase
         __materialPropertyBlock = new MaterialPropertyBlock();
 
         __materialPropertyBlock.SetBuffer("SpriteInstance", __graphicsBuffer);
+
+        __commandBuffer = new CommandBuffer();
+
+        __matrices = new Matrix4x4[1024];
     }
 
     protected override void OnDestroy()
@@ -103,16 +116,22 @@ public partial class SpriteRenderSystem : SystemBase
         
         __graphicsBuffer.Dispose();
         
+        __commandBuffer.Dispose();
+        
         base.OnDestroy();
     }
 
     protected override void OnUpdate()
     {
+        __commandBuffer.Clear();
+
         __group.CompleteDependency();
 
         double time = SystemAPI.Time.ElapsedTime;
         using (var chunks = __group.ToArchetypeChunkArray(Allocator.Temp))
         {
+            int length;
+            NativeArray<Matrix4x4> matrices;
             foreach (var chunk in chunks)
             {
                 var material = chunk.GetSharedComponent(__materialType);
@@ -123,16 +142,23 @@ public partial class SpriteRenderSystem : SystemBase
 
                 if (ObjectLoadingStatus.Completed == material.value.LoadingStatus)
                 {
+                    __localToWorldType.Update(this);
+                    __instanceDataType.Update(this);
                     __graphicsBuffer.SetData(chunk.GetNativeArray(ref __instanceDataType));
+
+                    matrices = chunk.GetNativeArray(ref __localToWorldType).Reinterpret<Matrix4x4>();
+
+                    length = matrices.Length;
+                    NativeArray<Matrix4x4>.Copy(matrices, __matrices, length);
                     
-                    Graphics.RenderMeshInstanced(
-                        new RenderParams(material.value.Result)
-                        {
-                            matProps = __materialPropertyBlock
-                        },
+                    __commandBuffer.DrawMeshInstanced(
                         __mesh,
-                        0,
-                        chunk.GetNativeArray(ref __localToWorldType));
+                        0, 
+                        material.value.Result, 
+                        0, 
+                        __matrices, 
+                        length, 
+                        __materialPropertyBlock);
                 }
             }
         }
