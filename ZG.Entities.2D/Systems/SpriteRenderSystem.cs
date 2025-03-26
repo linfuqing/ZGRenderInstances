@@ -23,6 +23,7 @@ public struct SpriteRenderInstanceData : IComponentData
 }
 
 [UpdateInGroup(typeof(PresentationSystemGroup))]
+[WorldSystemFilter(WorldSystemFilterFlags.Default | WorldSystemFilterFlags.Presentation | WorldSystemFilterFlags.Editor)]
 public partial class SpriteRenderSystem : SystemBase
 {
     private SharedComponentTypeHandle<SpriteRenderMaterial> __materialType;
