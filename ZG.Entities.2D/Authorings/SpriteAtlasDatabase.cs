@@ -14,7 +14,7 @@ public class SpriteAtlasDatabase : ScriptableObject
 
     private Dictionary<Texture, int> __textureIndices;
 
-    public int GetTextureIndex(Texture texture)
+    public int GetTextureIndex(Sprite texture)
     {
         if (__textureIndices == null)
         {
@@ -38,7 +38,9 @@ public class SpriteAtlasDatabase : ScriptableObject
             }
         }
 
-        return texture != null && __textureIndices.TryGetValue(texture, out int textureIndex) ? textureIndex : -1;
+        return texture != null && __textureIndices.TryGetValue(texture.texture, out int textureIndex)
+            ? textureIndex
+            : -1;
     }
 
     public void Build()
