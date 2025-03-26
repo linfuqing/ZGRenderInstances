@@ -36,7 +36,7 @@ public class SpriteRendererBaker : Baker<SpriteRenderer>
         instanceData.uvST.z = uv[2].x;
         instanceData.uvST.w = uv[2].y;
         
-        var textures = sharedMaterial.GetTexture("textures") as Texture2DArray;
+        var textures = sharedMaterial.GetTexture("_Textures") as Texture2DArray;
         var database = textures == null
             ? null
             : AssetDatabase.LoadAssetAtPath<SpriteAtlasDatabase>(AssetDatabase.GetAssetPath(textures));
