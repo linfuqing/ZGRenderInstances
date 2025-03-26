@@ -4,6 +4,7 @@ using UnityEngine.Experimental.Rendering;
 using UnityEngine.U2D;
 
 #if UNITY_EDITOR
+using System.Collections.Generic;
 using UnityEditor;
 
 [CreateAssetMenu(fileName = "SpriteAtlasDatabase", menuName = "ZG/Sprite Atlas Database")]
@@ -11,44 +12,58 @@ public class SpriteAtlasDatabase : ScriptableObject
 {
     public SpriteAtlas[] spriteAtlases;
 
-    public int GetTextureIndex(Sprite sprite)
-    {
-        int depth = 0;
-        foreach (var spriteAtlas in spriteAtlases)
-        {
-            if (!spriteAtlas.CanBindTo(sprite))
-            {
-                depth += spriteAtlas.spriteCount;
-                
-                continue;
-            }
+    private Dictionary<Texture, int> __textureIndices;
 
+    public int GetTextureIndex(Texture texture)
+    {
+        if (__textureIndices == null)
+        {
+            __textureIndices = new Dictionary<Texture, int>();
+
+            Texture spriteTexture;
             Sprite[] sprites;
-            sprites = new Sprite[spriteAtlas.spriteCount];
-            spriteAtlas.GetSprites(sprites);
-            
-            return Array.IndexOf(sprites, sprite) + depth;
+            foreach (var spriteAtlas in spriteAtlases)
+            {
+                sprites = new Sprite[spriteAtlas.spriteCount];
+                spriteAtlas.GetSprites(sprites);
+
+                foreach (var sprite in sprites)
+                {
+                    spriteTexture = sprite.texture;
+                    if(__textureIndices.ContainsKey(spriteTexture))
+                        continue;
+                    
+                    __textureIndices.Add(spriteTexture, __textureIndices.Count);
+                }
+            }
         }
 
-        return -1;
+        return texture != null && __textureIndices.TryGetValue(texture, out int textureIndex) ? textureIndex : -1;
     }
 
     public void Build()
     {
-        int width = 0, height = 0, depth = 0;
+        __textureIndices = new Dictionary<Texture, int>();
+
+        int width = 0, height = 0;
         TextureFormat format = TextureFormat.RGBA32;
+        Texture texture;
         Sprite[] sprites;
         foreach (var spriteAtlas in spriteAtlases)
         {
-            depth += spriteAtlas.spriteCount;
-            
             sprites = new Sprite[spriteAtlas.spriteCount];
             spriteAtlas.GetSprites(sprites);
 
             foreach (var sprite in sprites)
             {
-                width = Mathf.Max(width, sprite.texture.width);
-                height = Mathf.Max(height, sprite.texture.height);
+                texture = sprite.texture;
+                if(__textureIndices.ContainsKey(texture))
+                    continue;
+
+                __textureIndices.Add(texture, __textureIndices.Count);
+                
+                width = Mathf.Max(width, texture.width);
+                height = Mathf.Max(height, texture.height);
                 
                 format = sprite.texture.format;
             }
@@ -57,9 +72,10 @@ public class SpriteAtlasDatabase : ScriptableObject
         string path = AssetDatabase.GetAssetPath(this);
         var textures = AssetDatabase.LoadAssetAtPath<Texture2DArray>(path);
 
-        if (textures != null && (width != textures.width || height != textures.height))
+        int depth = textures.depth;
+        if (textures != null && (width != textures.width || height != textures.height || depth != textures.depth))
         {
-            DestroyImmediate(textures);
+            DestroyImmediate(textures, true);
 
             textures = null;
         }
@@ -73,17 +89,10 @@ public class SpriteAtlasDatabase : ScriptableObject
             AssetDatabase.AddObjectToAsset(textures, path);
         }
 
-        depth = 0;
-        foreach (var spriteAtlas in spriteAtlases)
+        foreach (var pair in __textureIndices)
         {
-            sprites = new Sprite[spriteAtlas.spriteCount];
-            spriteAtlas.GetSprites(sprites);
-
-            foreach (var sprite in sprites)
-            {
-                //TODO:mip
-                Graphics.CopyTexture(sprite.texture, 0, 0, textures, depth++, 0);
-            }
+            //TODO:mip
+            Graphics.CopyTexture(pair.Key, 0, 0, textures, pair.Value, 0);
         }
         
         EditorUtility.SetDirty(textures);
