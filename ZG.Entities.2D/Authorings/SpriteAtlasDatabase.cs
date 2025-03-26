@@ -74,7 +74,7 @@ public class SpriteAtlasDatabase : ScriptableObject
         string path = AssetDatabase.GetAssetPath(this);
         var textures = AssetDatabase.LoadAssetAtPath<Texture2DArray>(path);
 
-        int depth = textures.depth;
+        int depth = __textureIndices.Count;
         if (textures != null && (width != textures.width || height != textures.height || depth != textures.depth))
         {
             DestroyImmediate(textures, true);
