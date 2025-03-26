@@ -63,9 +63,15 @@ public class SpriteAtlasDatabase : ScriptableObject
 
             textures = null;
         }
-        
-        if(textures == null)
+
+        if (textures == null)
+        {
             textures = new Texture2DArray(width, height, depth, format, true);
+            
+            textures.name = "SpriteAtlas";
+            
+            AssetDatabase.AddObjectToAsset(textures, path);
+        }
 
         depth = 0;
         foreach (var spriteAtlas in spriteAtlases)
@@ -80,7 +86,7 @@ public class SpriteAtlasDatabase : ScriptableObject
             }
         }
         
-        AssetDatabase.AddObjectToAsset(textures, path);
+        EditorUtility.SetDirty(textures);
     }
 
     private void OnValidate()
