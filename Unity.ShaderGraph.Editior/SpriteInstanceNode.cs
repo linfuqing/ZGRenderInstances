@@ -146,7 +146,7 @@ namespace UnityEditor.ShaderGraph
                     sb.AppendLine(
                         "float4 positionST = UNITY_ACCESS_INSTANCED_PROP(SpriteInstance, _PositionST);");
                     sb.AppendLine(
-                        "positionOut = $precision3 (positionIn * positionST.xy + positionST.zw, positionIn.z);");
+                        "positionOut = $precision3 (positionIn.xy * positionST.xy + positionST.zw, positionIn.z);");
                     sb.AppendLine(
                         "float4 uvST = UNITY_ACCESS_INSTANCED_PROP(SpriteInstance, _UVST);");
                     sb.AppendLine(

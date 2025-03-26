@@ -6,7 +6,7 @@ public class SpriteRenderPassFeature : ScriptableRendererFeature
 {
     class SpriteRenderPass : ScriptableRenderPass
     {
-        private readonly ProfilingSampler __profilingSampler = new ProfilingSampler("SpriteRenderPassFeature");
+        //private readonly ProfilingSampler __profilingSampler = new ProfilingSampler("SpriteRenderPassFeature");
         // This method is called before executing the render pass.
         // It can be used to configure render targets and their clear state. Also to create temporary render target textures.
         // When empty this render pass will render to the active camera render target.
@@ -23,7 +23,7 @@ public class SpriteRenderPassFeature : ScriptableRendererFeature
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
             var cmd = SpriteRenderSystem.commandBuffer;
-            using (new ProfilingScope(cmd, __profilingSampler))
+            //using (new ProfilingScope(cmd, __profilingSampler))
                 context.ExecuteCommandBuffer(cmd);
         }
 

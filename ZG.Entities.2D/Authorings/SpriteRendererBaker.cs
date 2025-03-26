@@ -26,15 +26,25 @@ public class SpriteRendererBaker : Baker<SpriteRenderer>
         SpriteRenderInstanceData instanceData;
         instanceData.positionST.x = rect.width;
         instanceData.positionST.y = rect.height;
-        instanceData.positionST.z = instanceData.positionST.x * 0.5f - pivot.x;
-        instanceData.positionST.w = instanceData.positionST.y * 0.5f - pivot.y;
+        instanceData.positionST.z = rect.x - pivot.x;
+        instanceData.positionST.w = rect.y - pivot.y;
         instanceData.positionST /= sprite.pixelsPerUnit;
 
-        var uv = sprite.uv;
+        /*var uv = sprite.uv;
         instanceData.uvST.x = uv[1].x - uv[0].x;
         instanceData.uvST.y = uv[0].y - uv[2].y;
         instanceData.uvST.z = uv[2].x;
-        instanceData.uvST.w = uv[2].y;
+        instanceData.uvST.w = uv[2].y;*/
+        
+        var texture = sprite.texture;
+        float rTextureWidth = 1.0f / texture.width, rTextureHeight = 1.0f / texture.height;
+        var textureRect = sprite.textureRect;
+        instanceData.uvST.x = textureRect.width * rTextureWidth;
+        instanceData.uvST.y = textureRect.height * rTextureHeight;
+
+        var textureRectOffset = sprite.textureRectOffset;
+        instanceData.uvST.z = (textureRectOffset.x + textureRect.x) * rTextureWidth;
+        instanceData.uvST.w = (textureRectOffset.y + textureRect.y) * rTextureHeight;
         
         var textures = sharedMaterial.GetTexture("_Textures") as Texture2DArray;
         var database = textures == null

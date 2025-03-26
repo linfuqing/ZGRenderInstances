@@ -26,16 +26,18 @@ public struct SpriteRenderInstanceData : IComponentData
 [WorldSystemFilter(WorldSystemFilterFlags.Default | WorldSystemFilterFlags.Presentation | WorldSystemFilterFlags.Editor)]
 public partial class SpriteRenderSystem : SystemBase
 {
+    private uint __version;
     private SharedComponentTypeHandle<SpriteRenderMaterial> __materialType;
     private ComponentTypeHandle<SpriteRenderInstanceData> __instanceDataType;
     private ComponentTypeHandle<LocalToWorld> __localToWorldType;
     private EntityQuery __group;
     private NativeHashMap<WeakObjectReference<Material>, double> __times;
     private Mesh __mesh;
-    private GraphicsBuffer __graphicsBuffer;
-    private MaterialPropertyBlock __materialPropertyBlock;
+    private ComputeBuffer __computeBuffer;
     private CommandBuffer __commandBuffer;
     private Matrix4x4[] __matrices;
+
+    private static int __constantBufferID = Shader.PropertyToID("UnityInstancing_SpriteInstance");
 
     public static CommandBuffer commandBuffer
     {
@@ -88,20 +90,16 @@ public partial class SpriteRenderSystem : SystemBase
                 .WithAll<SpriteRenderMaterial, SpriteRenderInstanceData, LocalToWorld>()
                 .Build(this);
         
-        RequireForUpdate(__group);
-
         __times = new NativeHashMap<WeakObjectReference<Material>, double>(1, Allocator.Persistent);
         
         __mesh = GenerateQuad();
 
-        __graphicsBuffer =
-            new GraphicsBuffer(GraphicsBuffer.Target.Constant, GraphicsBuffer.UsageFlags.None, 1024,
-                TypeManager.GetTypeInfo<SpriteRenderInstanceData>().TypeSize);
+        __computeBuffer =
+            new ComputeBuffer(1024,
+                TypeManager.GetTypeInfo<SpriteRenderInstanceData>().TypeSize, 
+                ComputeBufferType.Constant, 
+                ComputeBufferMode.Dynamic);
         
-        __materialPropertyBlock = new MaterialPropertyBlock();
-
-        __materialPropertyBlock.SetBuffer("SpriteInstance", __graphicsBuffer);
-
         __commandBuffer = new CommandBuffer();
 
         __matrices = new Matrix4x4[1024];
@@ -115,7 +113,7 @@ public partial class SpriteRenderSystem : SystemBase
 
         __mesh = null;
         
-        __graphicsBuffer.Dispose();
+        __computeBuffer.Dispose();
         
         __commandBuffer.Dispose();
         
@@ -124,6 +122,12 @@ public partial class SpriteRenderSystem : SystemBase
 
     protected override void OnUpdate()
     {
+        uint version = (uint)__group.GetCombinedComponentOrderVersion(false);
+        if (!ChangeVersionUtility.DidChange(version, __version))
+            return;
+
+        __version = version;
+        
         __commandBuffer.Clear();
 
         __group.CompleteDependency();
@@ -132,6 +136,7 @@ public partial class SpriteRenderSystem : SystemBase
         using (var chunks = __group.ToArchetypeChunkArray(Allocator.Temp))
         {
             int length;
+            NativeArray<SpriteRenderInstanceData> instanceDatas;
             NativeArray<Matrix4x4> matrices;
             foreach (var chunk in chunks)
             {
@@ -145,7 +150,15 @@ public partial class SpriteRenderSystem : SystemBase
                 {
                     __localToWorldType.Update(this);
                     __instanceDataType.Update(this);
-                    __graphicsBuffer.SetData(chunk.GetNativeArray(ref __instanceDataType));
+
+                    instanceDatas = chunk.GetNativeArray(ref __instanceDataType);
+                    __computeBuffer.SetData(instanceDatas);
+
+                    __commandBuffer.SetGlobalConstantBuffer(
+                        __computeBuffer, 
+                        __constantBufferID, 
+                        0,
+                        instanceDatas.Length * TypeManager.GetTypeInfo<SpriteRenderInstanceData>().TypeSize);
 
                     matrices = chunk.GetNativeArray(ref __localToWorldType).Reinterpret<Matrix4x4>();
 
@@ -158,8 +171,7 @@ public partial class SpriteRenderSystem : SystemBase
                         material.value.Result, 
                         0, 
                         __matrices, 
-                        length, 
-                        __materialPropertyBlock);
+                        length);
                 }
             }
         }

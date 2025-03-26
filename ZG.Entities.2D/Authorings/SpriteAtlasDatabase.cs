@@ -6,6 +6,7 @@ using UnityEngine.U2D;
 #if UNITY_EDITOR
 using System.Collections.Generic;
 using UnityEditor;
+using UnityEngine.Rendering;
 
 [CreateAssetMenu(fileName = "SpriteAtlasDatabase", menuName = "ZG/Sprite Atlas Database")]
 public class SpriteAtlasDatabase : ScriptableObject
@@ -91,12 +92,18 @@ public class SpriteAtlasDatabase : ScriptableObject
             AssetDatabase.AddObjectToAsset(textures, path);
         }
 
+        int i, mipmapCount;
         foreach (var pair in __textureIndices)
         {
-            //TODO:mip
-            Graphics.CopyTexture(pair.Key, 0, 0, textures, pair.Value, 0);
+            depth = pair.Value;
+            texture = pair.Key;
+            mipmapCount = texture.mipmapCount;
+            for (i = 0; i < mipmapCount; ++i)
+                Graphics.CopyTexture(texture, 0, i, textures, depth, i);
         }
         
+        //textures.Apply(true, true);
+
         EditorUtility.SetDirty(textures);
     }
 
