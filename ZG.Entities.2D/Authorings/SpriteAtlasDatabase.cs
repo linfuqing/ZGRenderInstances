@@ -182,14 +182,14 @@ public class SpriteAtlasDatabase : ScriptableObject
 
         __textureIndices = new Dictionary<Texture2D, int>();
 
-        int width, height, depth, mipmapCount, i;
+        int width, height, depth, mipmapCount, i, j;
         TextureFormat format = TextureFormat.RGBA32;
         Material material;
         Texture2DArray textureArray;
         Texture2D texture;
         Mesh mesh;
         Sprite[] sprites = null;
-        var textures = new List<Texture>();
+        var textures = new List<Texture2D>();
         var vertices = new List<Vector3>();
         var uvs = new List<Vector2>();
         var triangles = new List<int>();
@@ -225,8 +225,6 @@ public class SpriteAtlasDatabase : ScriptableObject
                 {
                     width = Mathf.Max(width, texture.width);
                     height = Mathf.Max(height, texture.height);
-
-                    ++depth;
 
                     format = texture.format;
 
@@ -266,16 +264,18 @@ public class SpriteAtlasDatabase : ScriptableObject
                     AssetDatabase.AddObjectToAsset(mesh, path);
             }
 
-            if (textures.Count > 0)
+            depth = textures.Count;
+            if (depth > 0)
             {
                 textureArray = new Texture2DArray(width, height, depth, format, true);
                 textureArray.name = spriteAtlas.name;
 
-                foreach (var textureToCopy in textures)
+                for(i = 0; i < depth; ++i)
                 {
-                    mipmapCount = textureToCopy.mipmapCount;
-                    for (i = 0; i < mipmapCount; ++i)
-                        Graphics.CopyTexture(textureToCopy, 0, i, textureArray, depth, i);
+                    texture = textures[i];
+                    mipmapCount = texture.mipmapCount;
+                    for (j = 0; j < mipmapCount; ++j)
+                        Graphics.CopyTexture(texture, 0, j, textureArray, depth, j);
                 }
 
                 isContains = false;
