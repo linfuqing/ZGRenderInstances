@@ -7,10 +7,73 @@ using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-public struct SpriteRenderMaterial : ISharedComponentData
+public struct RenderAsset<T> where T : Object
 {
-    public float time;
-    public WeakObjectReference<Material> value;
+    public struct Manager
+    {
+        private NativeHashMap<WeakObjectReference<T>, double> __times;
+
+        public Manager(in AllocatorManager.AllocatorHandle allocator)
+        {
+            __times = new NativeHashMap<WeakObjectReference<T>, double>(1, allocator);
+        }
+
+        public void Dispose()
+        {
+            __times.Dispose();
+        }
+
+        public void Retain(double time, in RenderAsset<T> asset)
+        {
+            if(!__times.ContainsKey(asset.value))
+                asset.value.LoadAsync();
+            
+            __times[asset.value] = time + asset.releaseTime;
+        }
+        
+        public void ReleaseTimeoutAssets(double time)
+        {
+            if (!__times.IsEmpty)
+            {
+                UnsafeList<WeakObjectReference<T>> objectsToRelease = default;
+                foreach (var temp in __times)
+                {
+                    if (temp.Value > time)
+                        break;
+
+                    if (!objectsToRelease.IsCreated)
+                        objectsToRelease = new UnsafeList<WeakObjectReference<T>>(1, Allocator.Temp);
+                
+                    objectsToRelease.Add(temp.Key);
+                }
+
+                if (objectsToRelease.IsCreated)
+                {
+                    foreach (var objectToRelease in objectsToRelease)
+                    {
+                        __times.Remove(objectToRelease);
+                    
+                        objectToRelease.Release();
+                    }
+                
+                    objectsToRelease.Dispose();
+                }
+            }
+        }
+    }
+    
+    public float releaseTime;
+    public WeakObjectReference<T> value;
+
+    public bool isCreated => !value.Equals(default);
+
+}
+
+public struct SpriteRenderSharedData : ISharedComponentData
+{
+    public int subMeshIndex;
+    public RenderAsset<Mesh> mesh;
+    public RenderAsset<Material> material;
 }
 
 public struct SpriteRenderInstanceData : IComponentData
@@ -26,18 +89,21 @@ public struct SpriteRenderInstanceData : IComponentData
 [WorldSystemFilter(WorldSystemFilterFlags.Default | WorldSystemFilterFlags.Presentation | WorldSystemFilterFlags.Editor)]
 public partial class SpriteRenderSystem : SystemBase
 {
+    public const int MAX_INSTANCE_COUNT = 1024;
+    
     private uint __version;
-    private SharedComponentTypeHandle<SpriteRenderMaterial> __materialType;
+    private SharedComponentTypeHandle<SpriteRenderSharedData> __sharedDataType;
     private ComponentTypeHandle<SpriteRenderInstanceData> __instanceDataType;
     private ComponentTypeHandle<LocalToWorld> __localToWorldType;
     private EntityQuery __group;
-    private NativeHashMap<WeakObjectReference<Material>, double> __times;
+    private RenderAsset<Material>.Manager __materials;
+    private RenderAsset<Mesh>.Manager __meshes;
     private Mesh __mesh;
     private ComputeBuffer __computeBuffer;
     private CommandBuffer __commandBuffer;
     private Matrix4x4[] __matrices;
 
-    private static int __constantBufferID = Shader.PropertyToID("UnityInstancing_SpriteInstance");
+    private static readonly int ConstantBufferID = Shader.PropertyToID("UnityInstancing_SpriteInstance");
 
     public static CommandBuffer commandBuffer
     {
@@ -81,33 +147,35 @@ public partial class SpriteRenderSystem : SystemBase
     {
         base.OnCreate();
 
-        __materialType = GetSharedComponentTypeHandle<SpriteRenderMaterial>();
+        __sharedDataType = GetSharedComponentTypeHandle<SpriteRenderSharedData>();
         __instanceDataType = GetComponentTypeHandle<SpriteRenderInstanceData>(true);
         __localToWorldType = GetComponentTypeHandle<LocalToWorld>(true);
         
         using (var builder = new EntityQueryBuilder(Allocator.Temp))
             __group = builder
-                .WithAll<SpriteRenderMaterial, SpriteRenderInstanceData, LocalToWorld>()
+                .WithAll<SpriteRenderSharedData, SpriteRenderInstanceData, LocalToWorld>()
                 .Build(this);
         
-        __times = new NativeHashMap<WeakObjectReference<Material>, double>(1, Allocator.Persistent);
+        __materials = new RenderAsset<Material>.Manager(Allocator.Persistent);
+        __meshes = new RenderAsset<Mesh>.Manager(Allocator.Persistent);
         
         __mesh = GenerateQuad();
 
         __computeBuffer =
-            new ComputeBuffer(1024,
+            new ComputeBuffer(MAX_INSTANCE_COUNT,
                 TypeManager.GetTypeInfo<SpriteRenderInstanceData>().TypeSize, 
                 ComputeBufferType.Constant, 
                 ComputeBufferMode.Dynamic);
         
         __commandBuffer = new CommandBuffer();
 
-        __matrices = new Matrix4x4[1024];
+        __matrices = new Matrix4x4[MAX_INSTANCE_COUNT];
     }
 
     protected override void OnDestroy()
     {
-        __times.Dispose();
+        __materials.Dispose();
+        __meshes.Dispose();
         
         Object.DestroyImmediate(__mesh);
 
@@ -132,75 +200,65 @@ public partial class SpriteRenderSystem : SystemBase
 
         __group.CompleteDependency();
 
+        __localToWorldType.Update(this);
+        __instanceDataType.Update(this);
+
         double time = SystemAPI.Time.ElapsedTime;
         using (var chunks = __group.ToArchetypeChunkArray(Allocator.Temp))
         {
-            int length;
-            NativeArray<SpriteRenderInstanceData> instanceDatas;
+            bool isComplete;
+            int i, count, length;
+            SpriteRenderSharedData sharedData;
             NativeArray<Matrix4x4> matrices;
+            NativeArray<SpriteRenderInstanceData> instanceDatas;
             foreach (var chunk in chunks)
             {
-                var material = chunk.GetSharedComponent(__materialType);
-                if(!__times.ContainsKey(material.value))
-                    material.value.LoadAsync();
-                
-                __times[material.value] = time + material.time;
+                sharedData = chunk.GetSharedComponent(__sharedDataType);
+                __materials.Retain(time, sharedData.material);
 
-                if (ObjectLoadingStatus.Completed == material.value.LoadingStatus)
+                isComplete = ObjectLoadingStatus.Completed == sharedData.material.value.LoadingStatus;
+
+                if (sharedData.mesh.isCreated)
                 {
-                    __localToWorldType.Update(this);
-                    __instanceDataType.Update(this);
+                    __meshes.Retain(time, sharedData.mesh);
+                    
+                    isComplete &= ObjectLoadingStatus.Completed == sharedData.mesh.value.LoadingStatus;
+                }
 
+                if (isComplete)
+                {
+                    count = chunk.Count;
+                    
                     instanceDatas = chunk.GetNativeArray(ref __instanceDataType);
-                    __computeBuffer.SetData(instanceDatas);
-
-                    __commandBuffer.SetGlobalConstantBuffer(
-                        __computeBuffer, 
-                        __constantBufferID, 
-                        0,
-                        instanceDatas.Length * TypeManager.GetTypeInfo<SpriteRenderInstanceData>().TypeSize);
-
                     matrices = chunk.GetNativeArray(ref __localToWorldType).Reinterpret<Matrix4x4>();
 
-                    length = matrices.Length;
-                    NativeArray<Matrix4x4>.Copy(matrices, __matrices, length);
-                    
-                    __commandBuffer.DrawMeshInstanced(
-                        __mesh,
-                        0, 
-                        material.value.Result, 
-                        0, 
-                        __matrices, 
-                        length);
+                    for (i = 0; i < count; i += MAX_INSTANCE_COUNT)
+                    {
+                        length = Mathf.Min(MAX_INSTANCE_COUNT, count - i);
+                        __computeBuffer.SetData(instanceDatas.GetSubArray(i, length));
+
+                        __commandBuffer.SetGlobalConstantBuffer(
+                            __computeBuffer,
+                            ConstantBufferID,
+                            0,
+                            length * TypeManager.GetTypeInfo<SpriteRenderInstanceData>().TypeSize);
+
+                        NativeArray<Matrix4x4>.Copy(matrices.GetSubArray(i, length),
+                            __matrices, length);
+
+                        __commandBuffer.DrawMeshInstanced(
+                            sharedData.mesh.isCreated ? sharedData.mesh.value.Result : __mesh,
+                            0,
+                            sharedData.material.value.Result,
+                            0,
+                            __matrices,
+                            length);
+                    }
                 }
             }
         }
 
-        if (!__times.IsEmpty)
-        {
-            UnsafeList<WeakObjectReference<Material>> materialsToRelease = default;
-            foreach (var temp in __times)
-            {
-                if (temp.Value > time)
-                    break;
-
-                if (!materialsToRelease.IsCreated)
-                    materialsToRelease = new UnsafeList<WeakObjectReference<Material>>(1, Allocator.Temp);
-                
-                materialsToRelease.Add(temp.Key);
-            }
-
-            if (materialsToRelease.IsCreated)
-            {
-                foreach (var materialToRelease in materialsToRelease)
-                {
-                    __times.Remove(materialToRelease);
-                    
-                    materialToRelease.Release();
-                }
-                
-                materialsToRelease.Dispose();
-            }
-        }
+        __materials.ReleaseTimeoutAssets(time);
+        __meshes.ReleaseTimeoutAssets(time);
     }
 }
