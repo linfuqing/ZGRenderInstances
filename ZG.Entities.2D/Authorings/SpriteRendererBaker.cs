@@ -12,22 +12,26 @@ public class SpriteRendererBaker : Baker<SpriteRenderer>
 {
     public override void Bake(SpriteRenderer authoring)
     {
-        var sharedMaterial = authoring.sharedMaterial;
-        var textures = sharedMaterial.mainTexture as Texture2DArray;
-        var database = textures == null
-            ? null
-            : AssetDatabase.LoadAssetAtPath<SpriteAtlasDatabase>(AssetDatabase.GetAssetPath(textures));
+        int subMeshIndex = SpriteAtlasDatabase.FindRenderData(
+            authoring.sprite, 
+            out Mesh mesh, 
+            out Material material,
+            out int textureIndex, 
+            out float releaseTime);
+
+        if (subMeshIndex == -1)
+            return;
         
         Entity entity = GetEntity(authoring, TransformUsageFlags.Dynamic);
 
         var sprite = authoring.sprite;
         SpriteRenderSharedData sharedData;
-        sharedData.material.releaseTime = 10.0f;
-        sharedData.material.value = new WeakObjectReference<Material>(sharedMaterial);
-        sharedData.mesh.releaseTime = 10.0f;
+        sharedData.material.releaseTime = releaseTime;
+        sharedData.material.value = new WeakObjectReference<Material>(material);
+        sharedData.mesh.releaseTime = releaseTime;
         if (SpritePackingMode.Tight == sprite.packingMode)
         {
-            sharedData.subMeshIndex = database.GetSubMesh(sprite, out var mesh);
+            sharedData.subMeshIndex = subMeshIndex;
             sharedData.mesh.value = new WeakObjectReference<Mesh>(mesh);
         }
         else
@@ -68,7 +72,7 @@ public class SpriteRendererBaker : Baker<SpriteRenderer>
             instanceData.uvST.w = (textureRectOffset.y + textureRect.y) * rTextureHeight;
         }
 
-        instanceData.textureIndex = database == null ? 0 : database.GetTextureIndex(sprite);
+        instanceData.textureIndex = textureIndex;
         AddComponent(entity, instanceData);
     }
 }

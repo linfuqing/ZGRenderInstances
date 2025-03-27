@@ -12,39 +12,112 @@ using UnityEngine.Rendering;
 [CreateAssetMenu(fileName = "SpriteAtlasDatabase", menuName = "ZG/Sprite Atlas Database")]
 public class SpriteAtlasDatabase : ScriptableObject
 {
+    public float releaseTime = 10.0f;
+    public Shader shader;
     public SpriteAtlas[] spriteAtlases;
 
     private Dictionary<Texture2D, int> __textureIndices;
 
-    public int GetSubMesh(Sprite sprite, out Mesh mesh)
+    public Material GetMaterial(Sprite sprite)
     {
+        Material material = null;
+        foreach (var spriteAtlas in spriteAtlases)
+        {
+            if(!spriteAtlas.CanBindTo(sprite))
+                continue;
+
+            foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(this)))
+            {
+                if (asset is Material temp && asset.name == spriteAtlas.name)
+                {
+                    material = temp;
+                    
+                    break;
+                }
+            }
+
+            break;
+        }
+
+        return material;
+    }
+
+    public static int FindRenderData(
+        Sprite sprite, 
+        out Mesh mesh, 
+        out Material material, 
+        out int textureIndex, 
+        out float releaseTime)
+    {
+        mesh = null;
+        material = null;
+        textureIndex = -1;
+        releaseTime = 0.0f;
+        
+        int result;
+        SpriteAtlasDatabase database;
+        var guids = AssetDatabase.FindAssets("t:SpriteAtlasDatabase");
+        foreach (var guid in guids)
+        {
+            database = AssetDatabase.LoadAssetAtPath<SpriteAtlasDatabase>(AssetDatabase.GUIDToAssetPath(guid));
+            result = database.GetRenderData(sprite, out mesh, out material);
+
+            if (result != -1)
+            {
+                textureIndex = database.GetTextureIndex(sprite);
+
+                releaseTime = database.releaseTime;
+                
+                return result;
+            }
+        }
+
+        return -1;
+    }
+    
+    public int GetRenderData(Sprite sprite, out Mesh mesh, out Material material)
+    {
+        mesh = null;
+        material = null;
+        
         int result;
         Sprite[] sprites;
         foreach (var spriteAtlas in spriteAtlases)
         {
+            if(!spriteAtlas.CanBindTo(sprite))
+                continue;
+            
             sprites = new Sprite[spriteAtlas.spriteCount];
             spriteAtlas.GetSprites(sprites);
 
             result = Array.IndexOf(sprites, sprite);
-            if(result == -1)
-                continue;
-
-            mesh = null;
+            UnityEngine.Assertions.Assert.AreNotEqual(-1, result);
+            
             foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(this)))
             {
-                if (asset is Mesh temp && asset.name == spriteAtlas.name)
+                if(asset.name != spriteAtlas.name)
+                    continue;
+                
+                if (asset is Mesh meshTemp)
                 {
-                    mesh = temp;
+                    mesh = meshTemp;
                     
-                    break;
+                    if(material != null)
+                        break;
+                }
+                
+                if (asset is Material materialTemp)
+                {
+                    material = materialTemp;
+                    
+                    if(mesh != null)
+                        break;
                 }
             }
 
             return result;
         }
 
-        mesh = null;
-        
         return -1;
     }
 
@@ -112,6 +185,7 @@ public class SpriteAtlasDatabase : ScriptableObject
 
         int width, height, depth, mipmapCount, i;
         TextureFormat format = TextureFormat.RGBA32;
+        Material material;
         Texture2DArray textureArray;
         Texture2D texture;
         Mesh mesh;
@@ -225,6 +299,29 @@ public class SpriteAtlasDatabase : ScriptableObject
 
                 if (!isContains)
                     AssetDatabase.AddObjectToAsset(textureArray, path);
+                
+                material = null;
+                foreach (var asset in assets)
+                {
+                    if (asset is Material temp && temp.name == spriteAtlas.name)
+                    {
+                        material = temp;
+
+                        break;
+                    }
+                }
+
+                if (material == null)
+                {
+                    material = new Material(shader);
+                    material.name = spriteAtlas.name;
+                    
+                    AssetDatabase.AddObjectToAsset(material, path);
+                }
+                
+                material.mainTexture = textureArray;
+                
+                EditorUtility.SetDirty(material);
             }
         }
     }

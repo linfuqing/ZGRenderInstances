@@ -248,7 +248,7 @@ public partial class SpriteRenderSystem : SystemBase
 
                         __commandBuffer.DrawMeshInstanced(
                             sharedData.mesh.isCreated ? sharedData.mesh.value.Result : __mesh,
-                            0,
+                            sharedData.subMeshIndex,
                             sharedData.material.value.Result,
                             0,
                             __matrices,
