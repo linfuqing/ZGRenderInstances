@@ -327,6 +327,7 @@ public class SpriteAtlasDatabase : ScriptableObject
     }
 }
 
+[CustomEditor(typeof(SpriteAtlasDatabase))]
 public class SpriteAtlasDatabaseEditor : Editor
 {
     public override void OnInspectorGUI()
