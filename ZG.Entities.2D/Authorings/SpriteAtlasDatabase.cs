@@ -1,6 +1,5 @@
 using System;
 using UnityEngine;
-using UnityEngine.Experimental.Rendering;
 using UnityEngine.U2D;
 using Object = UnityEngine.Object;
 
@@ -325,10 +324,16 @@ public class SpriteAtlasDatabase : ScriptableObject
             }
         }
     }
+}
 
-    private void OnValidate()
+public class SpriteAtlasDatabaseEditor : Editor
+{
+    public override void OnInspectorGUI()
     {
-        Build();
+        base.OnInspectorGUI();
+        
+        if(GUILayout.Button("Build"))
+            ((SpriteAtlasDatabase)target).Build();
     }
 }
 #endif
