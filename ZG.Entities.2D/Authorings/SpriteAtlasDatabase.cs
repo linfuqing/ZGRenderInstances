@@ -207,6 +207,7 @@ public class SpriteAtlasDatabase : ScriptableObject
             vertices.Clear();
             uvs.Clear();
             triangles.Clear();
+            subMeshDescriptors.Clear();
             foreach (var sprite in sprites)
             {
                 foreach (var vertex in sprite.vertices)
@@ -233,7 +234,7 @@ public class SpriteAtlasDatabase : ScriptableObject
                 }
             }
 
-            if (triangles.Count > 0)
+            if (subMeshDescriptors.Count > 0)
             {
                 mesh = new Mesh();
                 mesh.name = spriteAtlas.name;
