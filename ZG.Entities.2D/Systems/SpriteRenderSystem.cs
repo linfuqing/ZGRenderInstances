@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
@@ -76,6 +78,7 @@ public struct SpriteRenderSharedData : ISharedComponentData
     public RenderAsset<Material> material;
 }
 
+[StructLayout(LayoutKind.Sequential, Pack = 16)]
 public struct SpriteRenderInstanceData : IComponentData
 {
     public float4 positionST;
@@ -89,6 +92,16 @@ public struct SpriteRenderInstanceData : IComponentData
 [WorldSystemFilter(WorldSystemFilterFlags.Default | WorldSystemFilterFlags.Presentation | WorldSystemFilterFlags.Editor)]
 public partial class SpriteRenderSystem : SystemBase
 {
+    private struct Comparer : IComparer<ArchetypeChunk>
+    {
+        public SharedComponentTypeHandle<SpriteRenderSharedData> sharedDataType;
+        
+        public int Compare(ArchetypeChunk x, ArchetypeChunk y)
+        {
+            return x.GetSharedComponentIndex(sharedDataType).CompareTo(y.GetSharedComponentIndex(sharedDataType));
+        }
+    }
+    
     public const int MAX_INSTANCE_COUNT = 1024;
     
     private uint __version;
@@ -202,18 +215,38 @@ public partial class SpriteRenderSystem : SystemBase
 
         __localToWorldType.Update(this);
         __instanceDataType.Update(this);
+        __sharedDataType.Update(this);
 
         double time = SystemAPI.Time.ElapsedTime;
         using (var chunks = __group.ToArchetypeChunkArray(Allocator.Temp))
         {
+            Comparer comparer;
+            comparer.sharedDataType = __sharedDataType;
+            
+            chunks.Sort(comparer);
+            
             bool isComplete;
-            int i, count, length;
-            SpriteRenderSharedData sharedData;
+            int offset, count, length, sharedIndex, oldSharedIndex = -1, instanceCount = 0;
+            SpriteRenderSharedData sharedData = default;
             NativeArray<Matrix4x4> matrices;
             NativeArray<SpriteRenderInstanceData> instanceDatas;
             foreach (var chunk in chunks)
             {
+                sharedIndex = chunk.GetSharedComponentIndex(__sharedDataType);
+                if (sharedIndex != oldSharedIndex)
+                {
+                    oldSharedIndex = sharedIndex;
+
+                    if (instanceCount > 0)
+                    {
+                        __Draw(sharedData, instanceCount);
+
+                        instanceCount = 0;
+                    }
+                }
+                
                 sharedData = chunk.GetSharedComponent(__sharedDataType);
+
                 __materials.Retain(time, sharedData.material);
 
                 isComplete = ObjectLoadingStatus.Completed == sharedData.material.value.LoadingStatus;
@@ -227,38 +260,59 @@ public partial class SpriteRenderSystem : SystemBase
 
                 if (isComplete)
                 {
+                    offset = 0;
                     count = chunk.Count;
                     
                     instanceDatas = chunk.GetNativeArray(ref __instanceDataType);
                     matrices = chunk.GetNativeArray(ref __localToWorldType).Reinterpret<Matrix4x4>();
 
-                    for (i = 0; i < count; i += MAX_INSTANCE_COUNT)
+                    while(count > offset)
                     {
-                        length = Mathf.Min(MAX_INSTANCE_COUNT, count - i);
-                        __computeBuffer.SetData(instanceDatas.GetSubArray(i, length));
-
-                        __commandBuffer.SetGlobalConstantBuffer(
-                            __computeBuffer,
-                            ConstantBufferID,
-                            0,
-                            length * TypeManager.GetTypeInfo<SpriteRenderInstanceData>().TypeSize);
-
-                        NativeArray<Matrix4x4>.Copy(matrices.GetSubArray(i, length),
-                            __matrices, length);
-
-                        __commandBuffer.DrawMeshInstanced(
-                            sharedData.mesh.isCreated ? sharedData.mesh.value.Result : __mesh,
-                            sharedData.subMeshIndex,
-                            sharedData.material.value.Result,
-                            0,
-                            __matrices,
+                        length = Mathf.Min(MAX_INSTANCE_COUNT - instanceCount, count - offset);
+                        __computeBuffer.SetData(instanceDatas.GetSubArray(offset, length), 
+                            0, 
+                            instanceCount, 
                             length);
+
+                        NativeArray<Matrix4x4>.Copy(matrices, offset,
+                            __matrices, instanceCount, length);
+                        
+                        instanceCount += length;
+
+                        if (instanceCount == MAX_INSTANCE_COUNT)
+                        {
+                            __Draw(sharedData, instanceCount);
+
+                            instanceCount = 0;
+                        }
+
+                        offset += length;
                     }
                 }
             }
+            
+            if (instanceCount > 0)
+                __Draw(sharedData, instanceCount);
         }
 
         __materials.ReleaseTimeoutAssets(time);
         __meshes.ReleaseTimeoutAssets(time);
+    }
+
+    private void __Draw(in SpriteRenderSharedData sharedData, int instanceCount)
+    {
+        __commandBuffer.SetGlobalConstantBuffer(
+            __computeBuffer,
+            ConstantBufferID,
+            0,
+            instanceCount * TypeManager.GetTypeInfo<SpriteRenderInstanceData>().TypeSize);
+
+        __commandBuffer.DrawMeshInstanced(
+            sharedData.mesh.isCreated ? sharedData.mesh.value.Result : __mesh,
+            sharedData.subMeshIndex,
+            sharedData.material.value.Result,
+            0,
+            __matrices,
+            instanceCount);
     }
 }
