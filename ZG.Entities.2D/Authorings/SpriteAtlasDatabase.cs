@@ -1,4 +1,5 @@
 using System;
+using UnityEditor.U2D;
 using UnityEngine;
 using UnityEngine.U2D;
 using Object = UnityEngine.Object;
@@ -7,6 +8,7 @@ using Object = UnityEngine.Object;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine.Rendering;
+using UnityEngine.U2D;
 
 [CreateAssetMenu(fileName = "SpriteAtlasDatabase", menuName = "ZG/Sprite Atlas Database")]
 public class SpriteAtlasDatabase : ScriptableObject
@@ -16,30 +18,6 @@ public class SpriteAtlasDatabase : ScriptableObject
     public SpriteAtlas[] spriteAtlases;
 
     private Dictionary<Texture2D, int> __textureIndices;
-
-    public Material GetMaterial(Sprite sprite)
-    {
-        Material material = null;
-        foreach (var spriteAtlas in spriteAtlases)
-        {
-            if(!spriteAtlas.CanBindTo(sprite))
-                continue;
-
-            foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(this)))
-            {
-                if (asset is Material temp && asset.name == spriteAtlas.name)
-                {
-                    material = temp;
-                    
-                    break;
-                }
-            }
-
-            break;
-        }
-
-        return material;
-    }
 
     public static int FindRenderData(
         Sprite sprite, 
@@ -79,17 +57,28 @@ public class SpriteAtlasDatabase : ScriptableObject
         mesh = null;
         material = null;
         
-        int result;
-        Sprite[] sprites;
+        int result, numSprites;
+        var spriteID = sprite.GetSpriteID();
+        Sprite[] sprites = null;
         foreach (var spriteAtlas in spriteAtlases)
         {
             if(!spriteAtlas.CanBindTo(sprite))
                 continue;
             
-            sprites = new Sprite[spriteAtlas.spriteCount];
+            numSprites = spriteAtlas.spriteCount;
+            Array.Resize(ref sprites, numSprites);
             spriteAtlas.GetSprites(sprites);
 
-            result = Array.IndexOf(sprites, sprite);
+            result = -1;
+            for(int i = 0; i < numSprites; ++i)
+            {
+                if(sprites[i].GetSpriteID() == spriteID)
+                {
+                    result = i;
+
+                    break;
+                }
+            }
             UnityEngine.Assertions.Assert.AreNotEqual(-1, result);
             
             foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(this)))
@@ -275,7 +264,7 @@ public class SpriteAtlasDatabase : ScriptableObject
                     texture = textures[i];
                     mipmapCount = texture.mipmapCount;
                     for (j = 0; j < mipmapCount; ++j)
-                        Graphics.CopyTexture(texture, 0, j, textureArray, depth, j);
+                        Graphics.CopyTexture(texture, 0, j, textureArray, i, j);
                 }
 
                 isContains = false;
@@ -320,6 +309,7 @@ public class SpriteAtlasDatabase : ScriptableObject
                 }
                 
                 material.mainTexture = textureArray;
+                material.enableInstancing = true;
                 
                 EditorUtility.SetDirty(material);
             }
