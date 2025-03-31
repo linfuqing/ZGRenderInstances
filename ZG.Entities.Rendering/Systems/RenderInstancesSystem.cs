@@ -409,7 +409,7 @@ public abstract partial class RenderInstancesSystem<T> : SystemBase where T : un
 
         if (!isChanged)
         {
-            using (var result = new NativeArray<int>(1, Allocator.Temp, NativeArrayOptions.ClearMemory))
+            using (var result = new NativeArray<int>(1, Allocator.TempJob, NativeArrayOptions.ClearMemory))
             {
                 DidChange didChange;
                 didChange.lastSystemVersion = LastSystemVersion;
