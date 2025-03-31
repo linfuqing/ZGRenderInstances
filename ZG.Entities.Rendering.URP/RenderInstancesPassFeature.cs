@@ -2,11 +2,11 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 
-public class SpriteRenderPassFeature : ScriptableRendererFeature
+public class RenderInstancesPassFeature : ScriptableRendererFeature
 {
-    class SpriteRenderPass : ScriptableRenderPass
+    class RenderPass : ScriptableRenderPass
     {
-        //private readonly ProfilingSampler __profilingSampler = new ProfilingSampler("SpriteRenderPassFeature");
+        private readonly ProfilingSampler __profilingSampler = new ProfilingSampler("RenderInstancesPassFeature");
         // This method is called before executing the render pass.
         // It can be used to configure render targets and their clear state. Also to create temporary render target textures.
         // When empty this render pass will render to the active camera render target.
@@ -22,9 +22,14 @@ public class SpriteRenderPassFeature : ScriptableRendererFeature
         // You don't have to call ScriptableRenderContext.submit, the render pipeline will call it at specific points in the pipeline.
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
-            var cmd = SpriteRenderSystem.commandBuffer;
-            //using (new ProfilingScope(cmd, __profilingSampler))
-                context.ExecuteCommandBuffer(cmd);
+            var commandBuffers = RenderCommandBufferPool.commandBuffers;
+            if (commandBuffers != null)
+            {
+                foreach (var commandBuffer in commandBuffers)
+                    context.ExecuteCommandBuffer(commandBuffer);
+            }
+            /*using (new ProfilingScope(cmd, __profilingSampler))
+                context.ExecuteCommandBuffer(cmd);*/
         }
 
         // Cleanup any allocated resources that were created during the execution of this render pass.
@@ -33,22 +38,22 @@ public class SpriteRenderPassFeature : ScriptableRendererFeature
         }
     }
 
-    SpriteRenderPass m_ScriptablePass;
+    private RenderPass __renderPass;
 
     /// <inheritdoc/>
     public override void Create()
     {
-        m_ScriptablePass = new SpriteRenderPass();
+        __renderPass = new RenderPass();
 
         // Configures where the render pass should be injected.
-        m_ScriptablePass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
+        __renderPass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
     }
 
     // Here you can inject one or multiple render passes in the renderer.
     // This method is called when setting up the renderer once per-camera.
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
     {
-        renderer.EnqueuePass(m_ScriptablePass);
+        renderer.EnqueuePass(__renderPass);
     }
 }
 

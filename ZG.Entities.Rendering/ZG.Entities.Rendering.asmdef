@@ -1,14 +1,13 @@
 {
-    "name": "ZG.Entities.2D",
+    "name": "ZG.Entities.Rendering",
     "rootNamespace": "",
     "references": [
-        "GUID:c3352a8bbbe14fb4ab52ae7bfff927ea",
         "GUID:e0cd26848372d4e5c891c569017e11f1",
         "GUID:734d92eba21c94caba915361bd5ac177",
         "GUID:8819f35a0fc84499b990e90a4ca1911f",
         "GUID:d8b63aba1907145bea998dd612889d6b",
         "GUID:a5baed0c9693541a5bd947d336ec7659",
-        "GUID:0fa4d299a26ca734085fbd6e8423bd42"
+        "GUID:df380645f10b7bc4b97d4f5eb6303d95"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

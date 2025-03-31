@@ -22,25 +22,25 @@ public class SpriteRendererBaker : Baker<SpriteRenderer>
         if (subMeshIndex == -1)
             return;
         
-        Entity entity = GetEntity(authoring, TransformUsageFlags.Dynamic);
+        Entity entity = GetEntity(authoring, TransformUsageFlags.Renderable);
 
         var sprite = authoring.sprite;
-        SpriteRenderSharedData sharedData;
-        sharedData.material.releaseTime = releaseTime;
-        sharedData.material.value = new WeakObjectReference<Material>(material);
-        sharedData.mesh.releaseTime = releaseTime;
+        RenderSharedData renderSharedData;
+        renderSharedData.material.releaseTime = releaseTime;
+        renderSharedData.material.value = new WeakObjectReference<Material>(material);
+        renderSharedData.mesh.releaseTime = releaseTime;
         if (SpritePackingMode.Tight == sprite.packingMode)
         {
-            sharedData.subMeshIndex = subMeshIndex;
-            sharedData.mesh.value = new WeakObjectReference<Mesh>(mesh);
+            renderSharedData.subMeshIndex = subMeshIndex;
+            renderSharedData.mesh.value = new WeakObjectReference<Mesh>(mesh);
         }
         else
         {
-            sharedData.subMeshIndex = 0;
-            sharedData.mesh.value = default;
+            renderSharedData.subMeshIndex = 0;
+            renderSharedData.mesh.value = default;
         }
 
-        AddSharedComponent(entity, sharedData);
+        AddSharedComponent(entity, renderSharedData);
 
         var rect = sprite.rect;
         var pivot = sprite.pivot;
