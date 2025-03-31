@@ -51,6 +51,24 @@ public class SpriteRendererBaker : Baker<SpriteRenderer>
         instanceData.positionST.w = rect.y - pivot.y;
         instanceData.positionST /= sprite.pixelsPerUnit;
 
+        switch (sprite.packingRotation)
+        {
+            case SpritePackingRotation.FlipHorizontal:
+                instanceData.positionST.x = -instanceData.positionST.x;
+                instanceData.positionST.z = -instanceData.positionST.z;
+                break;
+            case SpritePackingRotation.FlipVertical:
+                instanceData.positionST.y = -instanceData.positionST.y;
+                instanceData.positionST.w = -instanceData.positionST.w;
+                break;
+            case SpritePackingRotation.Rotate180:
+                Quaternion rotation = Quaternion.Euler(0, 0, 180);
+
+                instanceData.positionST.xz = (Vector2)(rotation * (Vector2)instanceData.positionST.xz);
+                instanceData.positionST.zw = (Vector2)(rotation * (Vector2)instanceData.positionST.zw);
+                break;
+        }
+        
         /*var uv = sprite.uv;
         instanceData.uvST.x = uv[1].x - uv[0].x;
         instanceData.uvST.y = uv[0].y - uv[2].y;

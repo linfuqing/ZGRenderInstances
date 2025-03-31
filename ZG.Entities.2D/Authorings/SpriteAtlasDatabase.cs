@@ -1,5 +1,4 @@
 using System;
-using UnityEditor.U2D;
 using UnityEngine;
 using UnityEngine.U2D;
 using Object = UnityEngine.Object;
@@ -8,7 +7,7 @@ using Object = UnityEngine.Object;
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine.Rendering;
-using UnityEngine.U2D;
+using UnityEditor.U2D;
 
 [CreateAssetMenu(fileName = "SpriteAtlasDatabase", menuName = "ZG/Sprite Atlas Database")]
 public class SpriteAtlasDatabase : ScriptableObject
