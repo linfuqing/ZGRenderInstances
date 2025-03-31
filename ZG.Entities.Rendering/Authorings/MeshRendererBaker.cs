@@ -23,7 +23,7 @@ public class MeshRendererBaker : Baker<MeshRenderer>
         renderSharedData.subMeshIndex = authoring.subMeshStartIndex;
         renderSharedData.mesh.releaseTime = 10.0f;
         renderSharedData.mesh.value = new WeakObjectReference<Mesh>(mesh);
-        renderSharedData.material.value = new WeakObjectReference<Material>(authoring.material);
+        renderSharedData.material.value = new WeakObjectReference<Material>(authoring.sharedMaterial);
         renderSharedData.material.releaseTime = 10.0f;
         AddSharedComponent(entity, renderSharedData);
         AddComponent<RenderInstance>(entity);
@@ -41,10 +41,14 @@ public class MeshRendererBaker : Baker<MeshRenderer>
 
                 LocalToWorld localToWorld; 
                 localToWorld.Value= authoring.transform.localToWorldMatrix;
-                
+
+                int materialIndex = 0;
+                var materials = authoring.sharedMaterials;
                 foreach (var entityToRender in entities)
                 {
                     ++renderSharedData.subMeshIndex;
+                    
+                    renderSharedData.material.value = new WeakObjectReference<Material>(materials[++materialIndex]);
                     
                     AddSharedComponent(entityToRender, renderSharedData);
                     AddComponent<RenderInstance>(entityToRender);
