@@ -21,10 +21,8 @@ public class MeshRendererBaker : Baker<MeshRenderer>
         
         RenderSharedData renderSharedData;
         renderSharedData.subMeshIndex = authoring.subMeshStartIndex;
-        renderSharedData.mesh.releaseTime = 10.0f;
-        renderSharedData.mesh.value = new WeakObjectReference<Mesh>(mesh);
-        renderSharedData.material.value = new WeakObjectReference<Material>(authoring.sharedMaterial);
-        renderSharedData.material.releaseTime = 10.0f;
+        renderSharedData.mesh = mesh;
+        renderSharedData.material = authoring.sharedMaterial;
         AddSharedComponent(entity, renderSharedData);
         AddComponent<RenderInstance>(entity);
         
@@ -48,7 +46,7 @@ public class MeshRendererBaker : Baker<MeshRenderer>
                 {
                     ++renderSharedData.subMeshIndex;
                     
-                    renderSharedData.material.value = new WeakObjectReference<Material>(materials[++materialIndex]);
+                    renderSharedData.material = materials[++materialIndex];
                     
                     AddSharedComponent(entityToRender, renderSharedData);
                     AddComponent<RenderInstance>(entityToRender);

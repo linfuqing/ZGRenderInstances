@@ -12,84 +12,22 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using Object = UnityEngine.Object;
 
-public struct RenderAsset<T> where T : Object
-{
-    public struct Manager
-    {
-        private NativeHashMap<WeakObjectReference<T>, double> __times;
-
-        public Manager(in AllocatorManager.AllocatorHandle allocator)
-        {
-            __times = new NativeHashMap<WeakObjectReference<T>, double>(1, allocator);
-        }
-
-        public void Dispose()
-        {
-            __times.Dispose();
-        }
-
-        public void Retain(double time, in RenderAsset<T> asset)
-        {
-            if(!__times.ContainsKey(asset.value))
-                asset.value.LoadAsync();
-            
-            __times[asset.value] = time + asset.releaseTime;
-        }
-        
-        public void ReleaseTimeoutAssets(double time)
-        {
-            if (!__times.IsEmpty)
-            {
-                UnsafeList<WeakObjectReference<T>> objectsToRelease = default;
-                foreach (var temp in __times)
-                {
-                    if (temp.Value > time)
-                        break;
-
-                    if (!objectsToRelease.IsCreated)
-                        objectsToRelease = new UnsafeList<WeakObjectReference<T>>(1, Allocator.Temp);
-                
-                    objectsToRelease.Add(temp.Key);
-                }
-
-                if (objectsToRelease.IsCreated)
-                {
-                    foreach (var objectToRelease in objectsToRelease)
-                    {
-                        __times.Remove(objectToRelease);
-                    
-                        objectToRelease.Release();
-                    }
-                
-                    objectsToRelease.Dispose();
-                }
-            }
-        }
-    }
-    
-    public float releaseTime;
-    public WeakObjectReference<T> value;
-
-    public bool isCreated => !value.Equals(default);
-
-}
-
 public struct RenderSharedData : ISharedComponentData, IEquatable<RenderSharedData>
 {
     public int subMeshIndex;
-    public RenderAsset<Mesh> mesh;
-    public RenderAsset<Material> material;
+    public UnityObjectRef<Mesh> mesh;
+    public UnityObjectRef<Material> material;
 
     public override int GetHashCode()
     {
-        return subMeshIndex ^ mesh.value.GetHashCode() ^ material.value.GetHashCode();
+        return subMeshIndex ^ mesh.GetHashCode() ^ material.GetHashCode();
     }
 
     public bool Equals(RenderSharedData other)
     {
         return subMeshIndex == other.subMeshIndex && 
-               mesh.value.Equals(other.mesh.value) &&
-               material.value.Equals(other.material.value);
+               mesh.Equals(other.mesh) &&
+               material.Equals(other.material);
     }
 }
 
@@ -110,8 +48,6 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
         }
     }
 
-    private RenderAsset<Material>.Manager __materials;
-    private RenderAsset<Mesh>.Manager __meshes;
     private ComputeBuffer __computeBuffer;
     private Matrix4x4[] __matrices;
 
@@ -125,9 +61,6 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
 
     public RenderInstances(int constantBufferID)
     {
-        __materials = new RenderAsset<Material>.Manager(Allocator.Persistent);
-        __meshes = new RenderAsset<Mesh>.Manager(Allocator.Persistent);
-        
         if(constantBufferID != 0)
             __computeBuffer =
                 new ComputeBuffer(MAX_INSTANCE_COUNT,
@@ -142,9 +75,6 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
 
     public void Dispose()
     {
-        __materials.Dispose();
-        __meshes.Dispose();
-        
         if(__computeBuffer != null)
             __computeBuffer.Dispose();
     }
@@ -169,7 +99,6 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
 
                 chunks.Sort(comparer);
 
-                bool isComplete;
                 int offset, count, length, sharedIndex, oldSharedIndex = -1, instanceCount = 0;
                 RenderSharedData sharedData = default;
                 NativeArray<Matrix4x4> matrices;
@@ -191,48 +120,34 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
 
                     sharedData = chunk.GetSharedComponent(sharedDataType);
 
-                    __materials.Retain(time, sharedData.material);
+                    offset = 0;
+                    count = chunk.Count;
 
-                    isComplete = ObjectLoadingStatus.Completed == sharedData.material.value.LoadingStatus;
+                    instanceDatas = chunk.GetNativeArray(ref instanceDataType);
+                    matrices = chunk.GetNativeArray(ref localToWorldType).Reinterpret<Matrix4x4>();
 
-                    if (sharedData.mesh.isCreated)
+                    while (count > offset)
                     {
-                        __meshes.Retain(time, sharedData.mesh);
+                        length = Mathf.Min(MAX_INSTANCE_COUNT - instanceCount, count - offset);
+                        if (__computeBuffer != null)
+                            __computeBuffer.SetData(instanceDatas.GetSubArray(offset, length),
+                                0,
+                                instanceCount,
+                                length);
 
-                        isComplete &= ObjectLoadingStatus.Completed == sharedData.mesh.value.LoadingStatus;
-                    }
+                        NativeArray<Matrix4x4>.Copy(matrices, offset,
+                            __matrices, instanceCount, length);
 
-                    if (isComplete)
-                    {
-                        offset = 0;
-                        count = chunk.Count;
+                        instanceCount += length;
 
-                        instanceDatas = chunk.GetNativeArray(ref instanceDataType);
-                        matrices = chunk.GetNativeArray(ref localToWorldType).Reinterpret<Matrix4x4>();
-
-                        while (count > offset)
+                        if (instanceCount == MAX_INSTANCE_COUNT)
                         {
-                            length = Mathf.Min(MAX_INSTANCE_COUNT - instanceCount, count - offset);
-                            if (__computeBuffer != null)
-                                __computeBuffer.SetData(instanceDatas.GetSubArray(offset, length),
-                                    0,
-                                    instanceCount,
-                                    length);
+                            __Draw(commandBuffer, mesh, sharedData, instanceCount);
 
-                            NativeArray<Matrix4x4>.Copy(matrices, offset,
-                                __matrices, instanceCount, length);
-
-                            instanceCount += length;
-
-                            if (instanceCount == MAX_INSTANCE_COUNT)
-                            {
-                                __Draw(commandBuffer, mesh, sharedData, instanceCount);
-
-                                instanceCount = 0;
-                            }
-
-                            offset += length;
+                            instanceCount = 0;
                         }
+
+                        offset += length;
                     }
                 }
 
@@ -240,12 +155,6 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
                     __Draw(commandBuffer, mesh, sharedData, instanceCount);
             }
         }
-    }
-
-    public void ReleaseTimeoutAssets(double time)
-    {
-        __materials.ReleaseTimeoutAssets(time);
-        __meshes.ReleaseTimeoutAssets(time);
     }
 
     private void __Draw(CommandBuffer commandBuffer, Mesh mesh, in RenderSharedData sharedData, int instanceCount)
@@ -258,9 +167,9 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
                 instanceCount * TypeManager.GetTypeInfo<T>().TypeSize);
 
         commandBuffer.DrawMeshInstanced(
-            sharedData.mesh.isCreated ? sharedData.mesh.value.Result : mesh,
+            sharedData.mesh.IsValid() ? sharedData.mesh.Value : mesh,
             sharedData.subMeshIndex,
-            sharedData.material.value.Result,
+            sharedData.material.Value,
             0,
             __matrices,
             instanceCount);
@@ -393,8 +302,6 @@ public abstract partial class RenderInstancesSystem<T> : SystemBase where T : un
         double time = SystemAPI.Time.ElapsedTime;
         __Render(__staticCommandBuffer, __staticGroup, time, ref __staticVersion);
         __Render(__dynamicCommandBuffer, __dynamicGroup, time, ref __dynamicVersion);
-        
-        __renderInstances.ReleaseTimeoutAssets(time);
     }
 
     private void __Render(CommandBuffer commandBuffer, in EntityQuery group, double time, ref uint version)

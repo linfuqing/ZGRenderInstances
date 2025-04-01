@@ -12,7 +12,6 @@ using UnityEditor.U2D;
 [CreateAssetMenu(fileName = "SpriteAtlasDatabase", menuName = "ZG/Sprite Atlas Database")]
 public class SpriteAtlasDatabase : ScriptableObject
 {
-    public float releaseTime = 10.0f;
     public Shader shader;
     public SpriteAtlas[] spriteAtlases;
 
@@ -22,13 +21,11 @@ public class SpriteAtlasDatabase : ScriptableObject
         Sprite sprite, 
         out Mesh mesh, 
         out Material material, 
-        out int textureIndex, 
-        out float releaseTime)
+        out int textureIndex)
     {
         mesh = null;
         material = null;
         textureIndex = -1;
-        releaseTime = 0.0f;
         
         int result;
         SpriteAtlasDatabase database;
@@ -42,8 +39,6 @@ public class SpriteAtlasDatabase : ScriptableObject
             {
                 textureIndex = database.GetTextureIndex(sprite);
 
-                releaseTime = database.releaseTime;
-                
                 return result;
             }
         }

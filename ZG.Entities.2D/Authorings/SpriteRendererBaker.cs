@@ -16,8 +16,7 @@ public class SpriteRendererBaker : Baker<SpriteRenderer>
             authoring.sprite, 
             out Mesh mesh, 
             out Material material,
-            out int textureIndex, 
-            out float releaseTime);
+            out int textureIndex);
 
         if (subMeshIndex == -1)
             return;
@@ -26,18 +25,16 @@ public class SpriteRendererBaker : Baker<SpriteRenderer>
 
         var sprite = authoring.sprite;
         RenderSharedData renderSharedData;
-        renderSharedData.material.releaseTime = releaseTime;
-        renderSharedData.material.value = new WeakObjectReference<Material>(material);
-        renderSharedData.mesh.releaseTime = releaseTime;
+        renderSharedData.material = material;
         if (SpritePackingMode.Tight == sprite.packingMode)
         {
             renderSharedData.subMeshIndex = subMeshIndex;
-            renderSharedData.mesh.value = new WeakObjectReference<Mesh>(mesh);
+            renderSharedData.mesh = mesh;
         }
         else
         {
             renderSharedData.subMeshIndex = 0;
-            renderSharedData.mesh.value = default;
+            renderSharedData.mesh = default;
         }
 
         AddSharedComponent(entity, renderSharedData);
