@@ -39,54 +39,76 @@ public class SpriteRendererBaker : Baker<SpriteRenderer>
 
         AddSharedComponent(entity, renderSharedData);
 
-        var rect = sprite.rect;
-        var pivot = sprite.pivot;
         SpriteRenderInstanceData instanceData;
-        instanceData.positionST.x = rect.width;
-        instanceData.positionST.y = rect.height;
-        instanceData.positionST.z = rect.x - pivot.x;
-        instanceData.positionST.w = rect.y - pivot.y;
-        instanceData.positionST /= sprite.pixelsPerUnit;
-
-        switch (sprite.packingRotation)
-        {
-            case SpritePackingRotation.FlipHorizontal:
-                instanceData.positionST.x = -instanceData.positionST.x;
-                instanceData.positionST.z = -instanceData.positionST.z;
-                break;
-            case SpritePackingRotation.FlipVertical:
-                instanceData.positionST.y = -instanceData.positionST.y;
-                instanceData.positionST.w = -instanceData.positionST.w;
-                break;
-            case SpritePackingRotation.Rotate180:
-                Quaternion rotation = Quaternion.Euler(0, 0, 180);
-
-                instanceData.positionST.xz = (Vector2)(rotation * (Vector2)instanceData.positionST.xz);
-                instanceData.positionST.zw = (Vector2)(rotation * (Vector2)instanceData.positionST.zw);
-                break;
-        }
-        
-        /*var uv = sprite.uv;
-        instanceData.uvST.x = uv[1].x - uv[0].x;
-        instanceData.uvST.y = uv[0].y - uv[2].y;
-        instanceData.uvST.z = uv[2].x;
-        instanceData.uvST.w = uv[2].y;*/
 
         if (SpritePackingMode.Tight == sprite.packingMode)
+        {
             instanceData.uvST = new Vector4(1.0f, 1.0f, 0.0f, 0.0f);
+            
+            var rect = sprite.rect;
+            instanceData.positionST.x = rect.width;
+            instanceData.positionST.y = rect.height;
+            instanceData.positionST.z = rect.x;
+            instanceData.positionST.w = rect.y;
+        }
         else
         {
             var texture = sprite.texture;
             float rTextureWidth = 1.0f / texture.width, rTextureHeight = 1.0f / texture.height;
+
             var textureRect = sprite.textureRect;
             instanceData.uvST.x = textureRect.width * rTextureWidth;
             instanceData.uvST.y = textureRect.height * rTextureHeight;
 
+            instanceData.uvST.z = textureRect.x * rTextureWidth;
+            instanceData.uvST.w = textureRect.y * rTextureHeight;
+
+            if (sprite.packed)
+            {
+                switch (sprite.packingRotation)
+                {
+                    case SpritePackingRotation.FlipHorizontal:
+                        instanceData.uvST.z +=  instanceData.uvST.x;
+                        instanceData.uvST.x  = -instanceData.uvST.x;
+                        break;
+                    case SpritePackingRotation.FlipVertical:
+                        instanceData.uvST.w +=  instanceData.uvST.y;
+                        instanceData.uvST.y  = -instanceData.uvST.y;
+                        break;
+                    case SpritePackingRotation.Rotate180:
+                        instanceData.uvST.z +=  instanceData.uvST.x;
+                        instanceData.uvST.w +=  instanceData.uvST.y;
+                        instanceData.uvST.x  = -instanceData.uvST.x;
+                        instanceData.uvST.y  = -instanceData.uvST.y;
+                        break;
+                }
+            }
+
             var textureRectOffset = sprite.textureRectOffset;
-            instanceData.uvST.z = (textureRectOffset.x + textureRect.x) * rTextureWidth;
-            instanceData.uvST.w = (textureRectOffset.y + textureRect.y) * rTextureHeight;
+            instanceData.positionST.x = textureRect.width;
+            instanceData.positionST.y = textureRect.height;
+            instanceData.positionST.z = textureRectOffset.x;
+            instanceData.positionST.w = textureRectOffset.y;
         }
 
+        var pivot = sprite.pivot;
+        instanceData.positionST.z -= pivot.x;
+        instanceData.positionST.w -= pivot.y;
+        instanceData.positionST /= sprite.pixelsPerUnit;
+
+        if (authoring.flipX)
+        { 
+            instanceData.positionST.x = -instanceData.positionST.x;
+            instanceData.positionST.z = -instanceData.positionST.z;
+        }
+        
+        if (authoring.flipY)
+        {
+            instanceData.positionST.y = -instanceData.positionST.y;
+            instanceData.positionST.w = -instanceData.positionST.w;
+        }
+
+        instanceData.color = (Vector4)authoring.color;
         instanceData.textureIndex = textureIndex;
         AddComponent(entity, instanceData);
     }

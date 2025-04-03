@@ -80,7 +80,6 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
     }
 
     public void Apply(
-        double time, 
         ref ComponentTypeHandle<T> instanceDataType,
         ref ComponentTypeHandle<LocalToWorld> localToWorldType, 
         in SharedComponentTypeHandle<RenderSharedData> sharedDataType,
@@ -233,9 +232,9 @@ public abstract partial class RenderInstancesSystem<T> : SystemBase where T : un
         }
     }
     
-    public const int MAX_INSTANCE_COUNT = 1024;
+    //public const int MAX_INSTANCE_COUNT = 1024;
     
-    private readonly ProfilingSampler __profilingSampler = new ProfilingSampler($"Render {nameof(T)}");
+    //private readonly ProfilingSampler __profilingSampler = new ProfilingSampler($"Render {nameof(T)}");
     
     private uint __staticVersion;
     private uint __dynamicVersion;
@@ -334,7 +333,6 @@ public abstract partial class RenderInstancesSystem<T> : SystemBase where T : un
         }
 
         __renderInstances.Apply(
-            time, 
             ref __instanceDataType, 
             ref __localToWorldType, 
             __sharedDataType, 

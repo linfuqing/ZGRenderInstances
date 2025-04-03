@@ -15,6 +15,8 @@ public struct SpriteRenderInstanceData : IComponentData
     public float4 positionST;
 
     public float4 uvST;
+
+    public float4 color;
     
     public int textureIndex;
 }

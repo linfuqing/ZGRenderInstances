@@ -11,17 +11,19 @@ namespace UnityEditor.ShaderGraph
         IMayRequireMeshUV, 
         IMayRequirePosition
     {
-        public const int kUVSlotID = 0;
-        public const int kPositionSlotID = 1;
-        public const int kPositionOutputSlotID = 2;
+        public const int kPositionSlotID = 0;
+        public const int kPositionOutputSlotID = 1;
+        public const int kUVSlotID = 2;
         public const int kUVOutputSlotID = 3;
-        //public const int kTextureIndexOutputSlotID = 4;
+        public const int kColorOutputSlotID = 4;
+        public const int kTextureIndexOutputSlotID = 5;
 
-        public const string kSlotUVName = "UV";
         public const string kSlotPositionName = "Vertex Position";
         public const string kOutputSlotPositionName = "Output Position";
+        public const string kSlotUVName = "UV";
         public const string kOutputSlotUVName = "Output UV";
-        //public const string kOutputSlotTextureIndexName = "Output Texture Index";
+        public const string kOutputSlotColorName = "Output Color";
+        public const string kOutputSlotTextureIndexName = "Output Texture Index";
 
         public SpriteInstanceNode()
         {
@@ -36,7 +38,7 @@ namespace UnityEditor.ShaderGraph
                 kSlotUVName, 
                 kSlotUVName, 
                 UVChannel.UV0, 
-                ShaderStageCapability.Vertex));
+                ShaderStageCapability.Fragment));
             
             AddSlot(new PositionMaterialSlot(kPositionSlotID, kSlotPositionName, kSlotPositionName,
                 CoordinateSpace.Object, ShaderStageCapability.Vertex));
@@ -44,8 +46,14 @@ namespace UnityEditor.ShaderGraph
             AddSlot(new Vector3MaterialSlot(kPositionOutputSlotID, kOutputSlotPositionName, kOutputSlotPositionName,
                 SlotType.Output, Vector3.zero, ShaderStageCapability.Vertex));
             
-            AddSlot(new Vector3MaterialSlot(kUVOutputSlotID, kOutputSlotUVName, kOutputSlotUVName,
-                SlotType.Output, Vector3.zero, ShaderStageCapability.Vertex));
+            AddSlot(new Vector2MaterialSlot(kUVOutputSlotID, kOutputSlotUVName, kOutputSlotUVName,
+                SlotType.Output, Vector3.zero, ShaderStageCapability.Fragment));
+            
+            AddSlot(new ColorRGBAMaterialSlot(kColorOutputSlotID, kOutputSlotColorName, kOutputSlotColorName,
+                SlotType.Output, Vector4.zero, ShaderStageCapability.Fragment));
+
+            AddSlot(new Vector1MaterialSlot(kTextureIndexOutputSlotID, kOutputSlotTextureIndexName, kOutputSlotTextureIndexName,
+                SlotType.Output, 0.0f, ShaderStageCapability.Fragment));
             
             RemoveSlotsNameNotMatching(new[]
             {
@@ -53,13 +61,16 @@ namespace UnityEditor.ShaderGraph
                 
                 kPositionSlotID, 
                 kPositionOutputSlotID, 
-                kUVOutputSlotID
+                
+                kUVOutputSlotID, 
+                kColorOutputSlotID, 
+                kTextureIndexOutputSlotID
             });
         }
 
         public bool RequiresMeshUV(UVChannel channel, ShaderStageCapability stageCapability = ShaderStageCapability.All)
         {
-            return UVChannel.UV0 == channel;
+            return UVChannel.UV0 == channel && (ShaderStageCapability.Fragment & stageCapability) == ShaderStageCapability.Fragment;
         }
 
         public NeededCoordinateSpace RequiresPosition(ShaderStageCapability stageCapability = ShaderStageCapability.All)
@@ -108,14 +119,20 @@ namespace UnityEditor.ShaderGraph
         public void GenerateNodeCode(ShaderStringBuilder sb, GenerationMode generationMode)
         {
             sb.AppendLine("$precision3 {0} = 0;", GetVariableNameForSlot(kPositionOutputSlotID));
-            sb.AppendLine("$precision3 {0} = 0;", GetVariableNameForSlot(kUVOutputSlotID));
+            sb.AppendLine("$precision2 {0} = 0;", GetVariableNameForSlot(kUVOutputSlotID));
+            sb.AppendLine("$precision4 {0} = 0;", GetVariableNameForSlot(kColorOutputSlotID));
+            sb.AppendLine("$precision {0} = 0;", GetVariableNameForSlot(kTextureIndexOutputSlotID));
             if (generationMode == GenerationMode.ForReals)
             {
-                sb.AppendLine($"{GetFunctionName()}(" +
+                sb.AppendLine($"{GetVertexFunctionName()}(" +
                               $"{GetSlotValue(kPositionSlotID, generationMode)}, " +
+                              $"{GetVariableNameForSlot(kPositionOutputSlotID)});");
+                
+                sb.AppendLine($"{GetFragmentFunctionName()}(" +
                               $"{GetSlotValue(kUVSlotID, generationMode)}, " +
-                              $"{GetVariableNameForSlot(kPositionOutputSlotID)}, " + 
-                              $"{GetVariableNameForSlot(kUVOutputSlotID)});");
+                              $"{GetVariableNameForSlot(kUVOutputSlotID)}, " + 
+                              $"{GetVariableNameForSlot(kColorOutputSlotID)}, " + 
+                              $"{GetVariableNameForSlot(kTextureIndexOutputSlotID)});");
             }
         }
 
@@ -128,18 +145,17 @@ namespace UnityEditor.ShaderGraph
                 {
                     sb.AppendLine("UNITY_DEFINE_INSTANCED_PROP(float4, _PositionST)");
                     sb.AppendLine("UNITY_DEFINE_INSTANCED_PROP(float4, _UVST)");
+                    sb.AppendLine("UNITY_DEFINE_INSTANCED_PROP(float4, _Color)");
                     sb.AppendLine("UNITY_DEFINE_INSTANCED_PROP(float, _TextureIndex)");
                 }
                 sb.AppendLine("UNITY_INSTANCING_BUFFER_END(SpriteInstance)");
             });
             
-            registry.ProvideFunction(GetFunctionName(), sb =>
+            registry.ProvideFunction(GetVertexFunctionName(), sb =>
             {
-                sb.AppendLine($"void {GetFunctionName()}(" +
+                sb.AppendLine($"void {GetVertexFunctionName()}(" +
                               "$precision3 positionIn, " +
-                              "$precision2 uvIn, " +
-                              "out $precision3 positionOut, " +
-                              "out $precision3 uvOut)");
+                              "out $precision3 positionOut)");
                 sb.AppendLine("{");
                 using (sb.IndentScope())
                 {
@@ -147,19 +163,43 @@ namespace UnityEditor.ShaderGraph
                         "float4 positionST = UNITY_ACCESS_INSTANCED_PROP(SpriteInstance, _PositionST);");
                     sb.AppendLine(
                         "positionOut = $precision3 (positionIn.xy * positionST.xy + positionST.zw, positionIn.z);");
+                }
+
+                sb.AppendLine("}");
+            });
+            
+            registry.ProvideFunction(GetFragmentFunctionName(), sb =>
+            {
+                sb.AppendLine($"void {GetFragmentFunctionName()}(" +
+                              "$precision2 uvIn, " +
+                              "out $precision2 uvOut, " +
+                              "out $precision4 colorOut, " +
+                              "out $precision textureIndexOut)");
+                sb.AppendLine("{");
+                using (sb.IndentScope())
+                {
                     sb.AppendLine(
-                        "float4 uvST = UNITY_ACCESS_INSTANCED_PROP(SpriteInstance, _UVST);");
+                        "$precision4 uvST = UNITY_ACCESS_INSTANCED_PROP(SpriteInstance, _UVST);");
                     sb.AppendLine(
-                        "uvOut = $precision3 (uvIn * uvST.xy + uvST.zw, UNITY_ACCESS_INSTANCED_PROP(SpriteInstance, _TextureIndex));");
+                        "uvOut = uvIn.xy * uvST.xy + uvST.zw;");
+                    sb.AppendLine(
+                        "colorOut = UNITY_ACCESS_INSTANCED_PROP(SpriteInstance, _Color);");
+                    sb.AppendLine(
+                        "textureIndexOut = UNITY_ACCESS_INSTANCED_PROP(SpriteInstance, _TextureIndex);");
                 }
 
                 sb.AppendLine("}");
             });
         }
 
-        string GetFunctionName()
+        string GetVertexFunctionName()
         {
-            return "SpriteInstance_$precision";
+            return "SpriteInstanceVertex_$precision";
+        }
+        
+        string GetFragmentFunctionName()
+        {
+            return "SpriteInstanceFragment_$precision";
         }
     }
 }
