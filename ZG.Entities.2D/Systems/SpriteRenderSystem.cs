@@ -1,23 +1,22 @@
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
-using Unity.Entities.Content;
 using Unity.Mathematics;
-using Unity.Transforms;
 using UnityEngine;
-using UnityEngine.Rendering;
 
-[StructLayout(LayoutKind.Sequential, Pack = 16)]
+
+[StructLayout(LayoutKind.Explicit, Size = 64, Pack = 16)]
 public struct SpriteRenderInstanceData : IComponentData
 {
+    [FieldOffset(0)]
     public float4 positionST;
 
+    [FieldOffset(16)]
     public float4 uvST;
 
+    [FieldOffset(32)]
     public float4 color;
     
+    [FieldOffset(48)]
     public int textureIndex;
 }
 
