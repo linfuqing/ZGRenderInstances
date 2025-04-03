@@ -43,13 +43,13 @@ public class SpriteRendererBaker : Baker<SpriteRenderer>
 
         if (SpritePackingMode.Tight == sprite.packingMode)
         {
-            instanceData.uvST = new Vector4(1.0f, 1.0f, 0.0f, 0.0f);
+            instanceData.positionST = instanceData.uvST = new Vector4(1.0f, 1.0f, 0.0f, 0.0f);
             
-            var rect = sprite.rect;
+            /*var rect = sprite.rect;
             instanceData.positionST.x = rect.width;
             instanceData.positionST.y = rect.height;
             instanceData.positionST.z = rect.x;
-            instanceData.positionST.w = rect.y;
+            instanceData.positionST.w = rect.y;*/
         }
         else
         {

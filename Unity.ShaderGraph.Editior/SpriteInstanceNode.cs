@@ -181,7 +181,7 @@ namespace UnityEditor.ShaderGraph
                     sb.AppendLine(
                         "$precision4 uvST = UNITY_ACCESS_INSTANCED_PROP(SpriteInstance, _UVST);");
                     sb.AppendLine(
-                        "uvOut = uvIn.xy * uvST.xy + uvST.zw;");
+                        "uvOut = uvIn * uvST.xy + uvST.zw;");
                     sb.AppendLine(
                         "colorOut = UNITY_ACCESS_INSTANCED_PROP(SpriteInstance, _Color);");
                     sb.AppendLine(
