@@ -3,14 +3,25 @@ using System.Collections.Generic;
 using Unity.Burst;
 using Unity.Burst.Intrinsics;
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
-using Unity.Jobs;
 using Unity.Entities;
-using Unity.Entities.Content;
 using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.Rendering;
-using Object = UnityEngine.Object;
+
+public struct RenderSortingOrder : IComponentData, IEquatable<RenderSortingOrder>
+{
+    public int value;
+    
+    public override int GetHashCode()
+    {
+        return value;
+    }
+
+    public bool Equals(RenderSortingOrder other)
+    {
+        return value == other.value;
+    }
+}
 
 public struct RenderSharedData : ISharedComponentData, IEquatable<RenderSharedData>
 {
@@ -40,11 +51,23 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
 {
     private struct Comparer : IComparer<ArchetypeChunk>
     {
+        public ComponentTypeHandle<RenderSortingOrder> sortingOrderType;
+
         public SharedComponentTypeHandle<RenderSharedData> sharedDataType;
         
         public int Compare(ArchetypeChunk x, ArchetypeChunk y)
         {
-            return x.GetSharedComponentIndex(sharedDataType).CompareTo(y.GetSharedComponentIndex(sharedDataType));
+            int sortingOrderX = x.HasChunkComponent<RenderSortingOrder>()
+                ? x.GetChunkComponentData(ref sortingOrderType).value
+                : 0, 
+                sortingOrderY = y.HasChunkComponent<RenderSortingOrder>()
+                    ? y.GetChunkComponentData(ref sortingOrderType).value
+                    : 0;
+            
+            if(sortingOrderX == sortingOrderY)
+                return x.GetSharedComponentIndex(sharedDataType).CompareTo(y.GetSharedComponentIndex(sharedDataType));
+            
+            return sortingOrderX.CompareTo(sortingOrderY);
         }
     }
 
@@ -54,8 +77,6 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
     private readonly ProfilingSampler __profilingSampler = new ProfilingSampler($"Render Instances {nameof(T)}");
     
     public readonly int ConstantBufferID;
-
-    public readonly int TypeSize;
 
     public const int MAX_INSTANCE_COUNT = 1024;
 
@@ -82,6 +103,7 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
     public void Apply(
         ref ComponentTypeHandle<T> instanceDataType,
         ref ComponentTypeHandle<LocalToWorld> localToWorldType, 
+        in ComponentTypeHandle<RenderSortingOrder> sortingOrderType, 
         in SharedComponentTypeHandle<RenderSharedData> sharedDataType,
         in EntityQuery group, 
         CommandBuffer commandBuffer,
@@ -94,6 +116,7 @@ public class RenderInstances<T> where T : unmanaged, IComponentData
             using (var chunks = group.ToArchetypeChunkArray(Allocator.Temp))
             {
                 Comparer comparer;
+                comparer.sortingOrderType = sortingOrderType;
                 comparer.sharedDataType = sharedDataType;
 
                 chunks.Sort(comparer);
@@ -214,6 +237,9 @@ public abstract partial class RenderInstancesSystem<T> : SystemBase where T : un
         public SharedComponentTypeHandle<RenderSharedData> sharedDataType;
         
         [ReadOnly]
+        public ComponentTypeHandle<RenderSortingOrder> sortingOrderType;
+
+        [ReadOnly]
         public ComponentTypeHandle<T> instanceDataType;
         
         [ReadOnly]
@@ -224,6 +250,7 @@ public abstract partial class RenderInstancesSystem<T> : SystemBase where T : un
         public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask, in v128 chunkEnabledMask)
         {
             if (!chunk.DidChange(sharedDataType, lastSystemVersion) &&
+                !chunk.DidChange(ref sortingOrderType, lastSystemVersion) &&
                 !chunk.DidChange(ref instanceDataType, lastSystemVersion) &&
                 !chunk.DidChange(ref localToWorldType, lastSystemVersion))
                 return;
@@ -239,6 +266,7 @@ public abstract partial class RenderInstancesSystem<T> : SystemBase where T : un
     private uint __staticVersion;
     private uint __dynamicVersion;
     private SharedComponentTypeHandle<RenderSharedData> __sharedDataType;
+    private ComponentTypeHandle<RenderSortingOrder> __sortingOrderType;
     private ComponentTypeHandle<T> __instanceDataType;
     private ComponentTypeHandle<LocalToWorld> __localToWorldType;
     private EntityQuery __staticGroup;
@@ -262,6 +290,7 @@ public abstract partial class RenderInstancesSystem<T> : SystemBase where T : un
         base.OnCreate();
 
         __sharedDataType = GetSharedComponentTypeHandle<RenderSharedData>();
+        __sortingOrderType = GetComponentTypeHandle<RenderSortingOrder>(true);
         __instanceDataType = GetComponentTypeHandle<T>(true);
         __localToWorldType = GetComponentTypeHandle<LocalToWorld>(true);
         
@@ -296,6 +325,7 @@ public abstract partial class RenderInstancesSystem<T> : SystemBase where T : un
     {
         __localToWorldType.Update(this);
         __instanceDataType.Update(this);
+        __sortingOrderType.Update(this);
         __sharedDataType.Update(this);
 
         double time = SystemAPI.Time.ElapsedTime;
@@ -320,6 +350,7 @@ public abstract partial class RenderInstancesSystem<T> : SystemBase where T : un
                 DidChange didChange;
                 didChange.lastSystemVersion = LastSystemVersion;
                 didChange.sharedDataType = __sharedDataType;
+                didChange.sortingOrderType = __sortingOrderType;
                 didChange.instanceDataType = __instanceDataType;
                 didChange.localToWorldType = __localToWorldType;
                 didChange.result = result;
@@ -335,6 +366,7 @@ public abstract partial class RenderInstancesSystem<T> : SystemBase where T : un
         __renderInstances.Apply(
             ref __instanceDataType, 
             ref __localToWorldType, 
+            __sortingOrderType, 
             __sharedDataType, 
             group,
             commandBuffer, 
