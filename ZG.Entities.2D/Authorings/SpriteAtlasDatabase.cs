@@ -109,6 +109,8 @@ public class SpriteAtlasDatabase : ScriptableObject
         {
             __textureIndices = new Dictionary<Texture2D, int>();
 
+            var textureIndices = new Dictionary<Texture2D, int>();
+
             Texture2D spriteTexture;
             Sprite[] sprites;
             foreach (var spriteAtlas in spriteAtlases)
@@ -116,13 +118,14 @@ public class SpriteAtlasDatabase : ScriptableObject
                 sprites = new Sprite[spriteAtlas.spriteCount];
                 spriteAtlas.GetSprites(sprites);
 
+                textureIndices.Clear();
                 foreach (var spriteTemp in sprites)
                 {
                     spriteTexture = spriteTemp.texture;
-                    if(__textureIndices.ContainsKey(spriteTexture))
+                    if(!textureIndices.TryAdd(spriteTexture, textureIndices.Count))
                         continue;
                     
-                    __textureIndices.Add(spriteTexture, __textureIndices.Count);
+                    __textureIndices.Add(spriteTexture, textureIndices.Count - 1);
                 }
             }
         }
@@ -163,7 +166,7 @@ public class SpriteAtlasDatabase : ScriptableObject
         
         assets = AssetDatabase.LoadAllAssetsAtPath(path);
 
-        __textureIndices = new Dictionary<Texture2D, int>();
+        var textures = new HashSet<Texture2D>();
 
         int width, height, depth, mipmapCount, i, j;
         TextureFormat format = TextureFormat.RGBA32;
@@ -172,7 +175,7 @@ public class SpriteAtlasDatabase : ScriptableObject
         Texture2D texture;
         Mesh mesh;
         Sprite[] sprites = null;
-        var textures = new List<Texture2D>();
+        var textureList = new List<Texture2D>();
         var vertices = new List<Vector3>();
         var uvs = new List<Vector2>();
         var triangles = new List<int>();
@@ -181,8 +184,8 @@ public class SpriteAtlasDatabase : ScriptableObject
         {
             width = 0;
             height = 0;
-            depth = 0;
             textures.Clear();
+            textureList.Clear();
             
             Array.Resize(ref sprites, spriteAtlas.spriteCount);
             spriteAtlas.GetSprites(sprites);
@@ -204,14 +207,14 @@ public class SpriteAtlasDatabase : ScriptableObject
                     triangles.Add(triangle);
                 
                 texture = sprite.texture;
-                if (__textureIndices.TryAdd(texture, __textureIndices.Count))
+                if (textures.Add(texture))
                 {
                     width = Mathf.Max(width, texture.width);
                     height = Mathf.Max(height, texture.height);
 
                     format = texture.format;
 
-                    textures.Add(texture);
+                    textureList.Add(texture);
                 }
             }
 
@@ -247,7 +250,7 @@ public class SpriteAtlasDatabase : ScriptableObject
                     AssetDatabase.AddObjectToAsset(mesh, path);
             }
 
-            depth = textures.Count;
+            depth = textureList.Count;
             if (depth > 0)
             {
                 textureArray = new Texture2DArray(width, height, depth, format, true);
@@ -255,7 +258,7 @@ public class SpriteAtlasDatabase : ScriptableObject
 
                 for(i = 0; i < depth; ++i)
                 {
-                    texture = textures[i];
+                    texture = textureList[i];
                     mipmapCount = texture.mipmapCount;
                     for (j = 0; j < mipmapCount; ++j)
                         Graphics.CopyTexture(texture, 0, j, textureArray, i, j);

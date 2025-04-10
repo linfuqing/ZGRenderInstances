@@ -26,7 +26,10 @@ public class SpriteRendererBaker : Baker<SpriteRenderer>
         RenderSortingOrder sortingOrder;
         sortingOrder.value = authoring.sortingOrder;
         if (sortingOrder.value != 0)
+        {
             AddComponent(entity, ComponentType.ChunkComponent<RenderSortingOrder>());
+            SetComponent(entity, sortingOrder);
+        }
 
         var sprite = authoring.sprite;
         RenderSharedData renderSharedData;
