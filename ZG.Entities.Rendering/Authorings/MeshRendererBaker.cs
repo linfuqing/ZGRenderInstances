@@ -3,67 +3,80 @@ using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Entities.Content;
+using Unity.Mathematics.Geometry;
 using Unity.Transforms;
 using UnityEngine;
 
 #if UNITY_EDITOR
-public class MeshRendererBaker : Baker<MeshRenderer>
+namespace ZG
 {
-    public override void Bake(MeshRenderer authoring)
+    public class MeshRendererBaker : Baker<MeshRenderer>
     {
-        var meshFilter = GetComponent<MeshFilter>();
-        if (meshFilter == null)
-            return;
-
-        var mesh = meshFilter.sharedMesh;
-        
-        var entity = GetEntity(authoring, TransformUsageFlags.Renderable);
-        
-        RenderSharedData renderSharedData;
-        renderSharedData.subMeshIndex = authoring.subMeshStartIndex;
-        renderSharedData.mesh = mesh;
-        renderSharedData.material = authoring.sharedMaterial;
-        AddSharedComponent(entity, renderSharedData);
-        AddComponent<RenderInstance>(entity);
-        
-        int count = mesh.subMeshCount - renderSharedData.subMeshIndex - 1;
-        if (count > 0)
+        public override void Bake(MeshRenderer authoring)
         {
-            using (var entities =
-                   new NativeArray<Entity>(count, Allocator.Temp, NativeArrayOptions.UninitializedMemory))
+            var meshFilter = GetComponent<MeshFilter>();
+            if (meshFilter == null)
+                return;
+
+            var mesh = meshFilter.sharedMesh;
+
+            var entity = GetEntity(authoring, TransformUsageFlags.Renderable);
+
+            RenderSharedData renderSharedData;
+            renderSharedData.subMeshIndex = authoring.subMeshStartIndex;
+            renderSharedData.mesh = mesh;
+            renderSharedData.material = authoring.sharedMaterial;
+            AddSharedComponent(entity, renderSharedData);
+
+            var bounds = mesh.GetSubMesh(renderSharedData.subMeshIndex).bounds;
+            
+            RenderBounds renderBounds;
+            renderBounds.aabb = MinMaxAABB.CreateFromCenterAndExtents(bounds.center, bounds.extents);
+            AddComponent(entity, renderBounds);
+
+            int count = mesh.subMeshCount - renderSharedData.subMeshIndex - 1;
+            if (count > 0)
             {
-                bool isStatic = IsStatic();
-                var flags = isStatic ? TransformUsageFlags.Renderable : TransformUsageFlags.Dynamic;
-
-                CreateAdditionalEntities(entities, flags);
-
-                LocalToWorld localToWorld; 
-                localToWorld.Value= authoring.transform.localToWorldMatrix;
-
-                int materialIndex = 0;
-                var materials = authoring.sharedMaterials;
-                foreach (var entityToRender in entities)
+                using (var entities =
+                       new NativeArray<Entity>(count, Allocator.Temp, NativeArrayOptions.UninitializedMemory))
                 {
-                    ++renderSharedData.subMeshIndex;
-                    
-                    renderSharedData.material = materials[++materialIndex];
-                    
-                    AddSharedComponent(entityToRender, renderSharedData);
-                    AddComponent<RenderInstance>(entityToRender);
-                    
-                    SetComponent(entityToRender, localToWorld);
-                }
+                    bool isStatic = IsStatic();
+                    var flags = isStatic ? TransformUsageFlags.Renderable : TransformUsageFlags.Dynamic;
 
-                if (!IsStatic())
-                {
-                    Parent parent;
-                    parent.Value = entity;
-                    
-                    LocalTransform localTransform =LocalTransform.Identity;
+                    CreateAdditionalEntities(entities, flags);
+
+                    LocalToWorld localToWorld;
+                    localToWorld.Value = authoring.transform.localToWorldMatrix;
+
+                    int materialIndex = 0;
+                    var materials = authoring.sharedMaterials;
                     foreach (var entityToRender in entities)
                     {
-                        SetComponent(entityToRender, localTransform);
-                        AddComponent(entityToRender, parent);
+                        ++renderSharedData.subMeshIndex;
+
+                        renderSharedData.material = materials[++materialIndex];
+
+                        AddSharedComponent(entityToRender, renderSharedData);
+                        
+                        bounds = mesh.GetSubMesh(renderSharedData.subMeshIndex).bounds;
+                        
+                        renderBounds.aabb = MinMaxAABB.CreateFromCenterAndExtents(bounds.center, bounds.extents);
+                        AddComponent(entityToRender, renderBounds);
+
+                        SetComponent(entityToRender, localToWorld);
+                    }
+
+                    if (!IsStatic())
+                    {
+                        Parent parent;
+                        parent.Value = entity;
+
+                        LocalTransform localTransform = LocalTransform.Identity;
+                        foreach (var entityToRender in entities)
+                        {
+                            SetComponent(entityToRender, localTransform);
+                            AddComponent(entityToRender, parent);
+                        }
                     }
                 }
             }
