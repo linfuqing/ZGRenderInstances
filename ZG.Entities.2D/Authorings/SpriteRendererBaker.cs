@@ -26,13 +26,9 @@ namespace ZG
 
             Entity entity = GetEntity(authoring, TransformUsageFlags.Renderable);
 
-            RenderSortingOrder sortingOrder;
-            sortingOrder.value = authoring.sortingOrder;
-            if (sortingOrder.value != 0)
-            {
-                AddComponent(entity, ComponentType.ChunkComponent<RenderSortingOrder>());
-                SetComponent(entity, sortingOrder);
-            }
+            RenderQueue renderQueue;
+            renderQueue.value = authoring.sortingOrder + material.renderQueue;
+            AddComponent(entity, renderQueue);
 
             var sprite = authoring.sprite;
             RenderSharedData renderSharedData;
@@ -122,6 +118,11 @@ namespace ZG
             instanceData.color = (Vector4)authoring.color;
             instanceData.textureIndex = textureIndex;
             AddComponent(entity, instanceData);
+
+            RenderConstantType constantType;
+            constantType.index = TypeManager.GetTypeIndex<SpriteRenderInstanceData>();
+            constantType.bufferID = Shader.PropertyToID("UnityInstancing_SpriteInstance");
+            AddSharedComponent(entity, constantType);
         }
     }
 }

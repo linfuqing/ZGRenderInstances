@@ -241,6 +241,8 @@ namespace ZG
                     {
                         constantType = constantTypes[i];
                         stride = TypeManager.GetTypeInfo(constantType.index).TypeSize;
+                        if(stride < 1)
+                            continue;
 
                         if (__computeBufferStrideToIndices.ContainsKey(stride))
                             continue;
@@ -269,6 +271,9 @@ namespace ZG
                 {
                     constantType = constantTypes[i];
                     stride = TypeManager.GetTypeInfo(constantType.index).TypeSize;
+                    if(stride < 1)
+                        continue;
+                    
                     computeBufferIndex = __computeBufferStrideToIndices[stride];
                     computeBufferOffset = computeBufferIndex + numComputeBuffers;
                     if (!constantBuffers[computeBufferOffset].isCreated)
@@ -277,7 +282,10 @@ namespace ZG
                         bytes = computeBuffer.BeginWrite<byte>(0, constantTypeEntityCount * stride);
                         
                         constantBuffers[computeBufferOffset] = new RenderConstantBuffer(
-                            computeBufferIndex, ref byteOffsets, ref bytes);
+                            constantType, 
+                            computeBufferIndex, 
+                            ref byteOffsets, 
+                            ref bytes);
                     }
 
                     constantBuffers[i] = constantBuffers[computeBufferOffset];
@@ -302,30 +310,24 @@ namespace ZG
         public void Apply(
             in NativeArray<float4x4> localToWorlds,
             in NativeArray<RenderChunk> chunks,
-            in NativeArray<RenderSharedData> sharedDatas,
-            in NativeArray<RenderConstantType> constantTypes,
             CommandBuffer commandBuffer)
         {
             End();
             
             var computeBuffers = __GetComputeBuffers();
-            RenderSharedData sharedData;
-            RenderConstantType constantType;
             int i, count, stride, offset = 0;
             foreach (var chunk in chunks)
             {
-                sharedData = sharedDatas[chunk.sharedDataIndex];
                 for (i = 0; i < chunk.count; i += count)
                 {
                     count = math.min(chunk.count - i, MAX_INSTANCE_COUNT);
 
-                    if (chunk.constantTypeIndex != -1)
+                    if (chunk.constantType.bufferID != 0)
                     {
-                        constantType = constantTypes[chunk.constantTypeIndex];
-                        stride = TypeManager.GetTypeInfo(constantType.index).TypeSize;
+                        stride = TypeManager.GetTypeInfo(chunk.constantType.index).TypeSize;
                         commandBuffer.SetGlobalConstantBuffer(
                             computeBuffers[__computeBufferStrideToIndices[stride]],
-                            constantType.bufferID,
+                            chunk.constantType.bufferID,
                             chunk.constantByteOffset,
                             chunk.count * stride);
                     }
@@ -340,9 +342,9 @@ namespace ZG
                     offset += count;
 
                     commandBuffer.DrawMeshInstanced(
-                        sharedData.mesh,
-                        sharedData.subMeshIndex,
-                        sharedData.material.Value,
+                        chunk.sharedData.mesh,
+                        chunk.sharedData.subMeshIndex,
+                        chunk.sharedData.material.Value,
                         0,
                         Matrices,
                         chunk.count);
@@ -352,8 +354,6 @@ namespace ZG
 
         public void Apply(
             in Entity entity, 
-            in NativeArray<RenderSharedData> sharedDatas,
-            in NativeArray<RenderConstantType> constantTypes, 
             ref EntityManager entityManager, 
             CommandBuffer commandBuffer)
         {
@@ -363,8 +363,6 @@ namespace ZG
             Apply(
                 localToWorlds.AsNativeArray().Reinterpret<float4x4>(), 
                 chunks.AsNativeArray(), 
-                sharedDatas, 
-                constantTypes, 
                 commandBuffer);
         }
 
@@ -376,8 +374,8 @@ namespace ZG
 
     public struct RenderChunk : IBufferElementData
     {
-        public int sharedDataIndex;
-        public int constantTypeIndex;
+        public RenderSharedData sharedData;
+        public RenderConstantType constantType;
         public int constantByteOffset;
         public int count;
     }
@@ -389,27 +387,30 @@ namespace ZG
 
     public struct RenderConstantBuffer : IBufferElementData
     {
-        public readonly int Index;
-
-        private NativeArray<int> __byteOffset;
-        private NativeArray<byte> __bytes;
+        public readonly RenderConstantType ConstantType;
         
-        public bool isCreated => __bytes.IsCreated;
+        [NativeDisableUnsafePtrRestriction]
+        private unsafe int* __byteOffset;
+        
+        [NativeDisableUnsafePtrRestriction]
+        private unsafe byte* __bytes;
+        
+        public unsafe bool isCreated => __bytes != null;
 
-        public RenderConstantBuffer(int index, ref NativeArray<int> byteOffset, ref NativeArray<byte> bytes)
+        public unsafe RenderConstantBuffer(in RenderConstantType constantType, int index, ref NativeArray<int> byteOffset, ref NativeArray<byte> bytes)
         {
-            Index = index;
-
-            __byteOffset = byteOffset;
-            __bytes = bytes;
+            ConstantType = constantType;
+            
+            __byteOffset = (int*)byteOffset.GetUnsafePtr() + index;
+            
+            __bytes = (byte*)bytes.GetUnsafePtr();
         }
 
-        public int Write(in NativeArray<byte> bytes)
+        public unsafe int Write(in NativeArray<byte> bytes)
         {
             int numBytes = bytes.Length;
-            ref var byteOffset = ref __byteOffset.AsSpan()[Index];
-            int offset = Interlocked.Add(ref byteOffset, numBytes) - numBytes;
-            NativeArray<byte>.Copy(bytes, 0, __bytes, offset, numBytes);
+            int offset = Interlocked.Add(ref *__byteOffset, numBytes) - numBytes;
+            UnsafeUtility.MemCpy(__bytes + offset, bytes.GetUnsafeReadOnlyPtr(), numBytes);
 
             return offset;
         }
@@ -420,17 +421,17 @@ namespace ZG
         public int subMeshIndex;
         public UnityObjectRef<Mesh> mesh;
         public UnityObjectRef<Material> material;
-
-        public override int GetHashCode()
-        {
-            return subMeshIndex ^ mesh.GetHashCode() ^ material.GetHashCode();
-        }
-
+        
         public bool Equals(RenderSharedData other)
         {
             return subMeshIndex == other.subMeshIndex && 
                    mesh.Equals(other.mesh) &&
                    material.Equals(other.material);
+        }
+        
+        public override int GetHashCode()
+        {
+            return subMeshIndex ^ mesh.GetHashCode() ^ material.GetHashCode();
         }
     }
 
@@ -455,14 +456,12 @@ namespace ZG
     {
         private bool __isBegin;
         
-        private uint __sharedDataVersion;
         private uint __constantTypeVersion;
         private ComponentLookup<RenderFrustumPlanes> __frustumPlanes;
         private ComponentLookup<RenderList> __renderLists;
         private BufferLookup<RenderConstantBuffer> __constantBuffers;
         private BufferLookup<RenderChunk> __chunks;
         private BufferLookup<RenderLocalToWorld> __localToWorlds;
-        private NativeList<RenderSharedData> __sharedDatas;
         private NativeList<RenderConstantType> __constantTypes;
         private Camera[] __cameras;
         
@@ -478,12 +477,16 @@ namespace ZG
             __constantBuffers = system.GetBufferLookup<RenderConstantBuffer>();
             __chunks = system.GetBufferLookup<RenderChunk>();
             __localToWorlds = system.GetBufferLookup<RenderLocalToWorld>();
-            __cameraEntityArchetype = system.EntityManager.CreateArchetype(
+            
+            var entityManager = system.EntityManager;
+            __cameraEntityArchetype = entityManager.CreateArchetype(
                 typeof(RenderFrustumPlanes), 
                 typeof(RenderList), 
                 typeof(RenderConstantBuffer), 
                 typeof(RenderChunk),
                 typeof(RenderLocalToWorld));
+
+            entityManager.AddComponent<RenderSingleton>(system.SystemHandle);
 
             __system = system;
         }
@@ -504,34 +507,18 @@ namespace ZG
             __system.EntityManager.DestroyEntity(entities);
             entities.Dispose();
 
-            if (__sharedDatas.IsCreated)
-                __sharedDatas.Dispose();
-            
             if(__constantTypes.IsCreated)
                 __constantTypes.Dispose();
         }
 
         public void Begin(int constantTypeEntityCount)
         {
-            UnityEngine.Assertions.Assert.IsFalse(__isBegin);
-
+            if (__isBegin)
+                return;
+            
             __isBegin = true;
             
             var entityManager = __system.EntityManager;
-            uint sharedDataVersion = (uint)entityManager.GetComponentOrderVersion<RenderSharedData>();
-            if (ChangeVersionUtility.DidChange(sharedDataVersion, __sharedDataVersion))
-            {
-                __sharedDataVersion = sharedDataVersion;
-
-                if (__sharedDatas.IsCreated)
-                    __sharedDatas.Dispose();
-                
-                entityManager.GetAllUniqueSharedComponents(out __sharedDatas, Allocator.Persistent);
-            }
-
-            if (__sharedDatas.Length < 1)
-                return;
-            
             uint constantTypeVersion = (uint)entityManager.GetComponentOrderVersion<RenderConstantType>();
             if (ChangeVersionUtility.DidChange(constantTypeVersion, __constantTypeVersion))
             {
@@ -541,6 +528,11 @@ namespace ZG
                     __constantTypes.Dispose();
                 
                 entityManager.GetAllUniqueSharedComponents(out __constantTypes, Allocator.Persistent);
+
+                RenderSingleton singleton;
+                singleton.constantTypeVersion = constantTypeVersion;
+                singleton.constantTypes = __constantTypes;
+                entityManager.SetComponentData(__system.SystemHandle, singleton);
             }
             
             int allCamerasCount = Camera.allCamerasCount;
@@ -679,8 +671,6 @@ namespace ZG
             __renderLists.GetRefRW(entity).ValueRW.Apply(
                 __localToWorlds[entity].AsNativeArray().Reinterpret<float4x4>(), 
                 __chunks[entity].AsNativeArray(), 
-                __sharedDatas.AsArray(), 
-                __constantTypes.AsArray(), 
                 commandBuffer);
 
             return true;
