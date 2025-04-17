@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.Entities;
 using Unity.Entities.Content;
+using Unity.Mathematics.Geometry;
 using UnityEngine;
 
 #if UNITY_EDITOR
@@ -26,6 +27,11 @@ namespace ZG
 
             Entity entity = GetEntity(authoring, TransformUsageFlags.Renderable);
 
+            var localBounds = authoring.localBounds;
+            RenderBounds renderBounds;
+            renderBounds.aabb = new MinMaxAABB(localBounds.min, localBounds.max);
+            AddComponent(entity, renderBounds);
+            
             RenderQueue renderQueue;
             renderQueue.value = authoring.sortingOrder + material.renderQueue;
             AddComponent(entity, renderQueue);

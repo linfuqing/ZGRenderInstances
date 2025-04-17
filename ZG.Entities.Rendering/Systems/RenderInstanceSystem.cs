@@ -220,7 +220,7 @@ namespace ZG
             {
                 ComputeBuffer computeBuffer;
                 RenderConstantType constantType;
-                int stride, computeBufferIndex, numConstantTypes = constantTypes.Length;
+                int i, stride, computeBufferIndex, numConstantTypes = constantTypes.Length;
                 if (constantTypeEntityCount > __constantTypeEntityCount ||
                     ChangeVersionUtility.DidChange(constantTypeVersion, __constantTypeVersion))
                 {
@@ -237,7 +237,7 @@ namespace ZG
                         computeBuffers.Clear();
                     }
 
-                    for (int i = 0; i < numConstantTypes; ++i)
+                    for (i = 0; i < numConstantTypes; ++i)
                     {
                         constantType = constantTypes[i];
                         stride = TypeManager.GetTypeInfo(constantType.index).TypeSize;
@@ -259,23 +259,28 @@ namespace ZG
                 }
 
                 int numComputeBuffers = computeBuffers.Count;
-                constantBuffers.ResizeUninitialized(numConstantTypes + numComputeBuffers);
-                for (int i = 0; i < numComputeBuffers; ++i)
-                    constantBuffers[i] = default;
+                constantBuffers.Clear();
+                constantBuffers.Resize(numConstantTypes + numComputeBuffers, NativeArrayOptions.ClearMemory);
 
-                __byteOffsets.Resize(numComputeBuffers, NativeArrayOptions.ClearMemory);
-                var byteOffsets = __byteOffsets.AsArray();
+                __byteOffsets.Resize(numComputeBuffers, NativeArrayOptions.UninitializedMemory);
+                for (i = 0; i < numComputeBuffers; ++i)
+                    __byteOffsets[i] = -1;
+                
                 NativeArray<byte> bytes;
                 int computeBufferOffset;
-                for (int i = 0; i < numConstantTypes; ++i)
+                for (i = 0; i < numConstantTypes; ++i)
                 {
                     constantType = constantTypes[i];
                     stride = TypeManager.GetTypeInfo(constantType.index).TypeSize;
-                    if(stride < 1)
+                    if (stride < 1)
+                    {
+                        constantBuffers[i] = default;
+                        
                         continue;
-                    
+                    }
+
                     computeBufferIndex = __computeBufferStrideToIndices[stride];
-                    computeBufferOffset = computeBufferIndex + numComputeBuffers;
+                    computeBufferOffset = computeBufferIndex + numConstantTypes;
                     if (!constantBuffers[computeBufferOffset].isCreated)
                     {
                         computeBuffer = computeBuffers[computeBufferIndex];
@@ -284,7 +289,7 @@ namespace ZG
                         constantBuffers[computeBufferOffset] = new RenderConstantBuffer(
                             constantType, 
                             computeBufferIndex, 
-                            ref byteOffsets, 
+                            ref __byteOffsets, 
                             ref bytes);
                     }
 
@@ -299,9 +304,13 @@ namespace ZG
             var computeBuffers = __GetComputeBuffers();
             if (computeBuffers != null)
             {
-                int numComputeBuffers = math.min(computeBuffers.Count, __byteOffsets.Length);
+                int numComputeBuffers = math.min(computeBuffers.Count, __byteOffsets.Length), byteOffset;
                 for (int i = 0; i < numComputeBuffers; ++i)
-                    computeBuffers[i].EndWrite<byte>(__byteOffsets[i]);
+                {
+                    byteOffset = __byteOffsets[i];
+                    if(byteOffset >= 0)
+                        computeBuffers[i].EndWrite<byte>(byteOffset);
+                }
             }
             
             __byteOffsets.Clear();
@@ -385,31 +394,45 @@ namespace ZG
         public float4x4 value;
     }
 
-    public struct RenderConstantBuffer : IBufferElementData
+    public readonly struct RenderConstantBuffer : IBufferElementData
     {
+        private readonly int Index;
+        private readonly int Length;
+        
+        [NativeDisableUnsafePtrRestriction]
+        private readonly unsafe UnsafeList<int>* __byteOffset;
+        
+        [NativeDisableUnsafePtrRestriction]
+        private readonly unsafe byte* __bytes;
+
         public readonly RenderConstantType ConstantType;
-        
-        [NativeDisableUnsafePtrRestriction]
-        private unsafe int* __byteOffset;
-        
-        [NativeDisableUnsafePtrRestriction]
-        private unsafe byte* __bytes;
-        
+
         public unsafe bool isCreated => __bytes != null;
 
-        public unsafe RenderConstantBuffer(in RenderConstantType constantType, int index, ref NativeArray<int> byteOffset, ref NativeArray<byte> bytes)
+        public unsafe RenderConstantBuffer(
+            in RenderConstantType constantType, 
+            int index, 
+            ref NativeList<int> byteOffset, 
+            ref NativeArray<byte> bytes)
         {
             ConstantType = constantType;
+
+            Index = index;
+
+            Length = bytes.Length;
+
+            byteOffset[index] = 0;
             
-            __byteOffset = (int*)byteOffset.GetUnsafePtr() + index;
+            __byteOffset = byteOffset.GetUnsafeList();
             
             __bytes = (byte*)bytes.GetUnsafePtr();
         }
 
         public unsafe int Write(in NativeArray<byte> bytes)
         {
-            int numBytes = bytes.Length;
-            int offset = Interlocked.Add(ref *__byteOffset, numBytes) - numBytes;
+            int numBytes = bytes.Length, length = Interlocked.Add(ref __byteOffset->ElementAt(Index), numBytes);
+            UnityEngine.Assertions.Assert.IsTrue(length <= Length);
+            int offset = length - numBytes;
             UnsafeUtility.MemCpy(__bytes + offset, bytes.GetUnsafeReadOnlyPtr(), numBytes);
 
             return offset;
@@ -677,7 +700,7 @@ namespace ZG
         }
     }
 
-    [UpdateInGroup(typeof(InitializationSystemGroup))]
+    [UpdateInGroup(typeof(InitializationSystemGroup), OrderLast = true)]
     public partial class RenderInstanceSystem : SystemBase
     {
         private EntityQuery __constantTypeGroup;

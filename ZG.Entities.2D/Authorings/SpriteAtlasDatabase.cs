@@ -12,11 +12,52 @@ using UnityEditor.U2D;
 [CreateAssetMenu(fileName = "SpriteAtlasDatabase", menuName = "ZG/Sprite Atlas Database")]
 public class SpriteAtlasDatabase : ScriptableObject
 {
+    public Mesh mesh;
     public Shader shader;
     public SpriteAtlas[] spriteAtlases;
 
     private Dictionary<Texture2D, int> __textureIndices;
+    
+    [MenuItem("Assets/ZG/Generate Quad Mesh")]
+    public static void GenerateQuadMesh(MenuCommand menuCommand)
+    {
+        var path = EditorUtility.SaveFilePanel("Save Quad Mesh", string.Empty, "Quad", "asset");
+        var mesh = GenerateQuad();
+        AssetDatabase.CreateAsset(mesh, path);
+    }
 
+    public static Mesh GenerateQuad()
+    {
+        Vector3[] vertices =
+        {
+            new Vector3(1.0f, 1.0f, 0),
+            new Vector3(1.0f, 0.0f, 0),
+            new Vector3(0.0f, 0.0f, 0),
+            new Vector3(0.0f, 1.0f, 0),
+        };
+
+        Vector2[] uv =
+        {
+            new Vector2(1, 1),
+            new Vector2(1, 0),
+            new Vector2(0, 0),
+            new Vector2(0, 1)
+        };
+
+        int[] triangles =
+        {
+            0, 1, 2,
+            2, 3, 0
+        };
+
+        return new Mesh
+        {
+            vertices = vertices,
+            uv = uv,
+            triangles = triangles
+        };
+    }
+    
     public static int FindRenderData(
         Sprite sprite, 
         out Mesh mesh, 
@@ -48,7 +89,7 @@ public class SpriteAtlasDatabase : ScriptableObject
     
     public int GetRenderData(Sprite sprite, out Mesh mesh, out Material material)
     {
-        mesh = null;
+        mesh = this.mesh;
         material = null;
         
         int result, numSprites;

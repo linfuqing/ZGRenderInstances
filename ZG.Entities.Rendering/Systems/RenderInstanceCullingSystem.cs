@@ -32,8 +32,6 @@ namespace ZG
         {
             public const int LENGTH = 128;
             
-            public int length;
-
             public uint version;
 
             [ReadOnly] public DynamicComponentTypeHandle t0;
@@ -444,7 +442,7 @@ namespace ZG
             {
                 this = default;
 
-                length = 0;
+                int length = 0;
 
                 ComponentType componentType;
                 componentType.AccessModeType = ComponentType.AccessMode.ReadOnly;
@@ -459,6 +457,8 @@ namespace ZG
 
                 if (length == 0)
                 {
+                    length = 1;
+                    
                     componentType.TypeIndex = TypeManager.GetTypeIndex<Disabled>();
                     t0 = systemState.GetDynamicComponentTypeHandle(componentType);
                 }
@@ -477,8 +477,13 @@ namespace ZG
                 }
                 else
                 {
-                    for(int i = 0; i < length; ++i)
-                        this[i].Update(ref systemState);
+                    DynamicComponentTypeHandle dynamicComponentTypeHandle;
+                    for (int i = 0; i < LENGTH; ++i)
+                    {
+                        dynamicComponentTypeHandle = this[i];
+                        dynamicComponentTypeHandle.Update(ref systemState);
+                        this[i] = dynamicComponentTypeHandle;
+                    }
                 }
             }
         }
