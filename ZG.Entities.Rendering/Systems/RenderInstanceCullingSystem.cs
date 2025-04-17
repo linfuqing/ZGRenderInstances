@@ -549,7 +549,7 @@ namespace ZG
                 in v128 chunkEnabledMask)
             {
                 RenderBoundsWorldChunk renderBoundsWorldChunk;
-                renderBoundsWorldChunk.aabb = new MinMaxAABB(float.MaxValue, float.MaxValue);
+                renderBoundsWorldChunk.aabb = new MinMaxAABB(float.MaxValue, float.MinValue);
 
                 var localToWorlds = chunk.GetNativeArray(ref localToWorldType);
                 var bounds = chunk.GetNativeArray(ref boundsType);
@@ -864,12 +864,13 @@ namespace ZG
             
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
                 __groupToTransform = builder
-                    .WithAll<RenderBounds>()
+                    .WithAll<LocalToWorld, RenderBounds>()
                     .WithAllRW<RenderBoundsWorld>()
                     .WithAllChunkComponentRW<RenderBoundsWorldChunk>()
                     .Build(ref state);
             
-            __groupToTransform.SetChangedVersionFilter(ComponentType.ReadOnly<RenderBounds>());
+            __groupToTransform.AddChangedVersionFilter(ComponentType.ReadOnly<LocalToWorld>());
+            __groupToTransform.AddChangedVersionFilter(ComponentType.ReadOnly<RenderBounds>());
             
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
                 __groupToCulling = builder
