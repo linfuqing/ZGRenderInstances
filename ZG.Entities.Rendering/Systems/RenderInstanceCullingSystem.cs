@@ -869,6 +869,8 @@ namespace ZG
                     .WithAllChunkComponentRW<RenderBoundsWorldChunk>()
                     .Build(ref state);
             
+            __groupToTransform.SetChangedVersionFilter(ComponentType.ReadOnly<RenderBounds>());
+            
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
                 __groupToCulling = builder
                     .WithAll<RenderSharedData, RenderBoundsWorld>()

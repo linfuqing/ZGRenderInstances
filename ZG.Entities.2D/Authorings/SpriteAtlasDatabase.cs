@@ -12,7 +12,6 @@ using UnityEditor.U2D;
 [CreateAssetMenu(fileName = "SpriteAtlasDatabase", menuName = "ZG/Sprite Atlas Database")]
 public class SpriteAtlasDatabase : ScriptableObject
 {
-    public Mesh mesh;
     public Shader shader;
     public SpriteAtlas[] spriteAtlases;
 
@@ -21,9 +20,9 @@ public class SpriteAtlasDatabase : ScriptableObject
     [MenuItem("Assets/ZG/Generate Quad Mesh")]
     public static void GenerateQuadMesh(MenuCommand menuCommand)
     {
-        var path = EditorUtility.SaveFilePanel("Save Quad Mesh", string.Empty, "Quad", "asset");
+        //var path = EditorUtility.SaveFilePanel("Save Quad Mesh", string.Empty, "Quad", "asset");
         var mesh = GenerateQuad();
-        AssetDatabase.CreateAsset(mesh, path);
+        AssetDatabase.CreateAsset(mesh, "Assets/QuadMesh.asset");
     }
 
     public static Mesh GenerateQuad()
@@ -89,7 +88,7 @@ public class SpriteAtlasDatabase : ScriptableObject
     
     public int GetRenderData(Sprite sprite, out Mesh mesh, out Material material)
     {
-        mesh = this.mesh;
+        mesh = null;
         material = null;
         
         int result, numSprites;

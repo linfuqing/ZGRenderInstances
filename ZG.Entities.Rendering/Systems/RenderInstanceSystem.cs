@@ -477,8 +477,6 @@ namespace ZG
 
     public class RenderInstanceManager
     {
-        private bool __isBegin;
-        
         private uint __constantTypeVersion;
         private ComponentLookup<RenderFrustumPlanes> __frustumPlanes;
         private ComponentLookup<RenderList> __renderLists;
@@ -492,6 +490,13 @@ namespace ZG
         private readonly SystemBase __system;
         private readonly Dictionary<object, Entity> __cameraEntities = new Dictionary<object, Entity>();
         private static readonly List<object> __camerasList = new List<object>();
+
+        public bool isBegin
+        {
+            get;
+
+            private set;
+        }
 
         public RenderInstanceManager(SystemBase system)
         {
@@ -536,10 +541,10 @@ namespace ZG
 
         public void Begin(int constantTypeEntityCount)
         {
-            if (__isBegin)
+            if (isBegin)
                 return;
             
-            __isBegin = true;
+            isBegin = true;
             
             var entityManager = __system.EntityManager;
             uint constantTypeVersion = (uint)entityManager.GetComponentOrderVersion<RenderConstantType>();
@@ -668,9 +673,9 @@ namespace ZG
 
         public void End()
         {
-            UnityEngine.Assertions.Assert.IsTrue(__isBegin);
+            UnityEngine.Assertions.Assert.IsTrue(isBegin);
 
-            __isBegin = false;
+            isBegin = false;
 
             __renderLists.Update(__system);
 
@@ -681,9 +686,14 @@ namespace ZG
         public bool Apply(Camera camera, CommandBuffer commandBuffer)
         {
             if (!__cameraEntities.TryGetValue(camera, out Entity entity))
+            {
+                if (isBegin)
+                    End();
+                
                 return false;
+            }
 
-            if (__isBegin)
+            if (isBegin)
                 End();
             else
                 __renderLists.Update(__system);
@@ -712,7 +722,8 @@ namespace ZG
             if (system == null)
                 return false;
             
-            system.CompleteDependency();
+            if(system.__manager.isBegin)
+                system.CompleteDependency();
 
             return system.__manager.Apply(camera, commandBuffer);
         }

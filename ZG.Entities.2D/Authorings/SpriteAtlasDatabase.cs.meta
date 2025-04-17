@@ -4,6 +4,7 @@ MonoImporter:
   externalObjects: {}
   serializedVersion: 2
   defaultReferences:
+  - mesh: {fileID: 4300000, guid: 4d9d6908223488545bf238dbd1ae8739, type: 2}
   - shader: {fileID: -6465566751694194690, guid: f286a3af4a0bf76478658bf82edac3df,
       type: 3}
   executionOrder: 0

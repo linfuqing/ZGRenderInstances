@@ -47,7 +47,8 @@ namespace ZG
             else
             {
                 renderSharedData.subMeshIndex = 0;
-                renderSharedData.mesh = default;
+                renderSharedData.mesh = AssetDatabase.LoadAssetAtPath<Mesh>(
+                    "Packages/cn.com.zerogame.unitypackages.render-instances/ZG.Entities.2D/Meshes/QuadMesh.asset");
             }
 
             AddSharedComponent(entity, renderSharedData);
