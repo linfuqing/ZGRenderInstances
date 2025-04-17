@@ -588,14 +588,10 @@ namespace ZG
                 __camerasList.Add(cameraObject);
             }
 
-            __renderLists.Update(__system);
-            
             Entity entity;
             foreach (var cameraToDelete in __camerasList)
             {
                 __cameraEntities.Remove(cameraToDelete, out entity);
-                
-                __renderLists[entity].Dispose();
                 
                 if (!entities.IsCreated)
                     entities = new NativeList<Entity>(Allocator.Temp);
@@ -618,7 +614,14 @@ namespace ZG
             }
 
             if (entityCountToDestroy > 0)
+            {
+                __renderLists.Update(__system);
+
+                foreach (var entityToDispose in entities)
+                    __renderLists[entityToDispose].Dispose();
+
                 entityManager.DestroyEntity(entities.AsArray());
+            }
 
             if (entityCountToCreate > 0)
             {
