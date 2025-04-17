@@ -645,6 +645,8 @@ namespace ZG
                     __renderLists[entity] = new RenderList(Allocator.Persistent);
                 }
             }
+            else
+                __renderLists.Update(__system);
 
             if (entities.IsCreated)
                 entities.Dispose();
