@@ -33,11 +33,13 @@ namespace ZG
                 }*/
                 var cmd = CommandBufferPool.Get();
                 using (new ProfilingScope(cmd, __profilingSampler))
-                {
                     RenderInstanceSystem.Apply(renderingData.cameraData.camera, cmd);
                     
-                    context.ExecuteCommandBuffer(cmd);
-                }
+                context.ExecuteCommandBuffer(cmd);
+                
+                cmd.Clear();
+                
+                CommandBufferPool.Release(cmd);
             }
 
             // Cleanup any allocated resources that were created during the execution of this render pass.
@@ -54,7 +56,7 @@ namespace ZG
             __renderPass = new RenderPass();
 
             // Configures where the render pass should be injected.
-            __renderPass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
+            __renderPass.renderPassEvent = RenderPassEvent.BeforeRenderingTransparents;
         }
 
         // Here you can inject one or multiple render passes in the renderer.

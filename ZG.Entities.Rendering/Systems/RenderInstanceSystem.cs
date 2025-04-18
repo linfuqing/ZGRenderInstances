@@ -287,7 +287,6 @@ namespace ZG
                         bytes = computeBuffer.BeginWrite<byte>(0, constantTypeEntityCount * stride);
                         
                         constantBuffers[computeBufferOffset] = new RenderConstantBuffer(
-                            constantType, 
                             computeBufferIndex, 
                             ref __byteOffsets, 
                             ref bytes);
@@ -317,6 +316,8 @@ namespace ZG
         }
 
         public void Apply(
+            in NativeArray<RenderSharedData> sharedDatas, 
+            in NativeArray<RenderConstantType> constantTypes, 
             in NativeArray<float4x4> localToWorlds,
             in NativeArray<RenderChunk> chunks,
             CommandBuffer commandBuffer)
@@ -324,6 +325,8 @@ namespace ZG
             End();
             
             var computeBuffers = __GetComputeBuffers();
+            RenderSharedData sharedData;
+            RenderConstantType constantType;
             int i, count, stride, offset = 0;
             foreach (var chunk in chunks)
             {
@@ -331,12 +334,13 @@ namespace ZG
                 {
                     count = math.min(chunk.count - i, MAX_INSTANCE_COUNT);
 
-                    if (chunk.constantType.bufferID != 0)
+                    if (chunk.constantTypeIndex != -1)
                     {
-                        stride = TypeManager.GetTypeInfo(chunk.constantType.index).TypeSize;
+                        constantType = constantTypes[chunk.constantTypeIndex];
+                        stride = TypeManager.GetTypeInfo(constantType.index).TypeSize;
                         commandBuffer.SetGlobalConstantBuffer(
                             computeBuffers[__computeBufferStrideToIndices[stride]],
-                            chunk.constantType.bufferID,
+                            constantType.bufferID,
                             chunk.constantByteOffset,
                             chunk.count * stride);
                     }
@@ -350,18 +354,19 @@ namespace ZG
 
                     offset += count;
 
+                    sharedData = sharedDatas[chunk.sharedDataIndex];
                     commandBuffer.DrawMeshInstanced(
-                        chunk.sharedData.mesh,
-                        chunk.sharedData.subMeshIndex,
-                        chunk.sharedData.material.Value,
+                        sharedData.mesh,
+                        sharedData.subMeshIndex,
+                        sharedData.material.Value,
                         0,
                         Matrices,
-                        chunk.count);
+                        count);
                 }
             }
         }
 
-        public void Apply(
+        /*public void Apply(
             in Entity entity, 
             ref EntityManager entityManager, 
             CommandBuffer commandBuffer)
@@ -373,7 +378,7 @@ namespace ZG
                 localToWorlds.AsNativeArray().Reinterpret<float4x4>(), 
                 chunks.AsNativeArray(), 
                 commandBuffer);
-        }
+        }*/
 
         private List<ComputeBuffer> __GetComputeBuffers()
         {
@@ -383,8 +388,8 @@ namespace ZG
 
     public struct RenderChunk : IBufferElementData
     {
-        public RenderSharedData sharedData;
-        public RenderConstantType constantType;
+        public int sharedDataIndex;
+        public int constantTypeIndex;
         public int constantByteOffset;
         public int count;
     }
@@ -405,18 +410,13 @@ namespace ZG
         [NativeDisableUnsafePtrRestriction]
         private readonly unsafe byte* __bytes;
 
-        public readonly RenderConstantType ConstantType;
-
         public unsafe bool isCreated => __bytes != null;
 
         public unsafe RenderConstantBuffer(
-            in RenderConstantType constantType, 
             int index, 
             ref NativeList<int> byteOffset, 
             ref NativeArray<byte> bytes)
         {
-            ConstantType = constantType;
-
             Index = index;
 
             Length = bytes.Length;
@@ -477,13 +477,11 @@ namespace ZG
 
     public class RenderInstanceManager
     {
-        private uint __constantTypeVersion;
         private ComponentLookup<RenderFrustumPlanes> __frustumPlanes;
         private ComponentLookup<RenderList> __renderLists;
         private BufferLookup<RenderConstantBuffer> __constantBuffers;
         private BufferLookup<RenderChunk> __chunks;
         private BufferLookup<RenderLocalToWorld> __localToWorlds;
-        private NativeList<RenderConstantType> __constantTypes;
         private Camera[] __cameras;
         
         private readonly EntityArchetype __cameraEntityArchetype;
@@ -505,7 +503,7 @@ namespace ZG
             __constantBuffers = system.GetBufferLookup<RenderConstantBuffer>();
             __chunks = system.GetBufferLookup<RenderChunk>();
             __localToWorlds = system.GetBufferLookup<RenderLocalToWorld>();
-            
+
             var entityManager = system.EntityManager;
             __cameraEntityArchetype = entityManager.CreateArchetype(
                 typeof(RenderFrustumPlanes), 
@@ -532,11 +530,11 @@ namespace ZG
                 entities[--numCameraEntities] = cameraEntity;
             }
             
-            __system.EntityManager.DestroyEntity(entities);
+            var entityManager = __system.EntityManager;
+            entityManager.DestroyEntity(entities);
             entities.Dispose();
-
-            if(__constantTypes.IsCreated)
-                __constantTypes.Dispose();
+            
+            entityManager.GetComponentData<RenderSingleton>(__system.SystemHandle).Dispose();
         }
 
         public void Begin(int constantTypeEntityCount)
@@ -547,21 +545,10 @@ namespace ZG
             isBegin = true;
             
             var entityManager = __system.EntityManager;
-            uint constantTypeVersion = (uint)entityManager.GetComponentOrderVersion<RenderConstantType>();
-            if (ChangeVersionUtility.DidChange(constantTypeVersion, __constantTypeVersion))
-            {
-                __constantTypeVersion = constantTypeVersion;
-
-                if (__constantTypes.IsCreated)
-                    __constantTypes.Dispose();
-                
-                entityManager.GetAllUniqueSharedComponents(out __constantTypes, Allocator.Persistent);
-
-                RenderSingleton singleton;
-                singleton.constantTypeVersion = constantTypeVersion;
-                singleton.constantTypes = __constantTypes;
-                entityManager.SetComponentData(__system.SystemHandle, singleton);
-            }
+            ref var singleton = ref entityManager.GetComponentDataRW<RenderSingleton>(__system.SystemHandle).ValueRW;
+            singleton.Update(ref entityManager);
+            var constantTypes = singleton.constantTypes.AsArray();
+            uint constantTypeVersion = singleton.constantTypeVersion;
             
             int allCamerasCount = Camera.allCamerasCount;
             if(allCamerasCount > (__cameras == null ? 0 : __cameras.Length))
@@ -656,7 +643,6 @@ namespace ZG
             __localToWorlds.Update(__system);
             __frustumPlanes.Update(__system);
             
-            var constantTypes = __constantTypes.AsArray();
             DynamicBuffer<RenderConstantBuffer> constantBuffers;
             for (i = 0; i < allCamerasCount; ++i)
             {
@@ -666,7 +652,7 @@ namespace ZG
                 constantBuffers = __constantBuffers[entity];
                 __renderLists.GetRefRW(entity).ValueRW.Begin(
                     constantTypeEntityCount, 
-                    __constantTypeVersion, 
+                    constantTypeVersion, 
                     constantTypes, 
                     ref constantBuffers);
                 
@@ -706,7 +692,11 @@ namespace ZG
             __chunks.Update(__system);
             __localToWorlds.Update(__system);
 
+            var singleton = __system.EntityManager.GetComponentData<RenderSingleton>(__system.SystemHandle);
+
             __renderLists.GetRefRW(entity).ValueRW.Apply(
+                singleton.sharedDatas.AsArray(), 
+                singleton.constantTypes.AsArray(), 
                 __localToWorlds[entity].AsNativeArray().Reinterpret<float4x4>(), 
                 __chunks[entity].AsNativeArray(), 
                 commandBuffer);
