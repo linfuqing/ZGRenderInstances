@@ -170,26 +170,30 @@ namespace ZG
     {
         public const int MAX_INSTANCE_COUNT = 1024;
         public static readonly Matrix4x4[] Matrices = new Matrix4x4[MAX_INSTANCE_COUNT];
-        
-        public readonly GCHandle ComputeBuffersHandle;
+        public static readonly Dictionary<int, List<ComputeBuffer>> ComputeBuffers = new Dictionary<int, List<ComputeBuffer>>();
 
+        public readonly int InstanceID;
+        
         private uint __constantTypeVersion;
         private int __constantTypeEntityCount;
         private NativeHashMap<int, int> __computeBufferStrideToIndices;
         private NativeList<int> __byteOffsets;
 
-        public RenderList(in AllocatorManager.AllocatorHandle allocator)
+        public RenderList(int instanceID, in AllocatorManager.AllocatorHandle allocator)
         {
+            InstanceID = instanceID;
+            
             var computeBuffers = new List<ComputeBuffer>();
-            ComputeBuffersHandle =
+            ComputeBuffers[instanceID] = computeBuffers;
+            /*ComputeBuffersHandle = 
                 GCHandle.Alloc(
                     computeBuffers,
-                    GCHandleType.Pinned);
+                    GCHandleType.Pinned)*/;
 
             __constantTypeEntityCount = 0;
             __constantTypeVersion = 0;
             __computeBufferStrideToIndices = new NativeHashMap<int, int>(1, allocator);
-            __byteOffsets = new NativeList<int>(computeBuffers.Count, allocator);
+            __byteOffsets = new NativeList<int>(allocator);
         }
 
         public void Dispose()
@@ -201,7 +205,7 @@ namespace ZG
                     computeBuffer.Dispose();
             }
 
-            ComputeBuffersHandle.Free();
+            ComputeBuffers.Remove(InstanceID);
 
             __computeBufferStrideToIndices.Dispose();
             __byteOffsets.Dispose();
@@ -382,7 +386,7 @@ namespace ZG
 
         private List<ComputeBuffer> __GetComputeBuffers()
         {
-            return ComputeBuffersHandle.Target as List<ComputeBuffer>;
+            return ComputeBuffers[InstanceID];// //ComputeBuffersHandle.Target as List<ComputeBuffer>;
         }
     }
 
@@ -551,6 +555,9 @@ namespace ZG
             uint constantTypeVersion = singleton.constantTypeVersion;
             
             int allCamerasCount = Camera.allCamerasCount;
+            if (allCamerasCount < 1)
+                return;
+            
             if(allCamerasCount > (__cameras == null ? 0 : __cameras.Length))
                 Array.Resize(ref __cameras, allCamerasCount);
             
@@ -629,7 +636,7 @@ namespace ZG
                     entity = entities[--entityCountToCreate];
                     __cameraEntities[camera] = entity;
                     
-                    __renderLists[entity] = new RenderList(Allocator.Persistent);
+                    __renderLists[entity] = new RenderList(camera.GetInstanceID(), Allocator.Persistent);
                 }
             }
             else
