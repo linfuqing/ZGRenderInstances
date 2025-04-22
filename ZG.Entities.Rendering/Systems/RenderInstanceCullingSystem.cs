@@ -757,9 +757,9 @@ namespace ZG
                     //RenderConstantType renderConstantType;
                     RenderLocalToWorld renderLocalToWorld;
                     EntityStorageInfo entityStorageInfo;
-                    DynamicComponentTypeHandle constantType;
+                    DynamicComponentTypeHandle constantType = default;
                     RenderConstantBuffer constantBuffer = default;
-                    NativeArray<byte> bytes = default;
+                    NativeArray<byte> bytes;
                     foreach (var temp in instances)
                     {
                         if (renderChunk.sharedDataIndex != temp.sharedDataIndex)
@@ -791,15 +791,15 @@ namespace ZG
                                 constantTypeStride = TypeManager
                                     .GetTypeInfo(constantTypes[temp.constantTypeIndex].index)
                                     .TypeSize;
-                                    
-                                bytes = entityStorageInfo.Chunk.GetDynamicComponentDataArrayReinterpret<byte>(
-                                    ref constantType, 
-                                    constantTypeStride);
                             }
                         }
                         
                         if (temp.constantTypeIndex != -1)
                         {
+                            bytes = entityStorageInfo.Chunk.GetDynamicComponentDataArrayReinterpret<byte>(
+                                ref constantType, 
+                                constantTypeStride);
+                            
                             constantByteOffset = entityStorageInfo.IndexInChunk * constantTypeStride;
                             constantByteOffset =
                                 constantBuffer.Write(bytes.GetSubArray(constantByteOffset, constantTypeStride));
