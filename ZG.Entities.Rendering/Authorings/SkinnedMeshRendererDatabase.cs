@@ -303,7 +303,7 @@ namespace ZG
                 foreach (var material in skinnedMeshRenderer.sharedMaterials)
                     GetOrCreateMaterial(material);
                 
-                animator = skinnedMeshRenderer.GetComponentInParent<Animator>();
+                animator = skinnedMeshRenderer.GetComponentInParent<Animator>(!skinnedMeshRenderer.gameObject.activeInHierarchy);
                 if (animator == null)
                 {
                     EditorUtility.DisplayDialog("Warning", "Selected object does not have Animator.", "OK");
@@ -363,7 +363,7 @@ namespace ZG
             Color[] pixelColors = new Color[textureSize];
             foreach (var skinnedMeshRenderer in skinnedMeshRenderers)
             {
-                animator = skinnedMeshRenderer.GetComponentInParent<Animator>();
+                animator = skinnedMeshRenderer.GetComponentInParent<Animator>(!skinnedMeshRenderer.gameObject.activeInHierarchy);
                 if (animator == null)
                     continue;
 
@@ -525,6 +525,17 @@ namespace ZG
         public override void OnInspectorGUI()
         {
             base.OnInspectorGUI();
+
+            if (GUILayout.Button("Clear"))
+            {
+                foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(target)))
+                {
+                    if (asset == target)
+                        continue;
+                    
+                    DestroyImmediate(asset, true);
+                }
+            }
             
             if(GUILayout.Button("Rebuild"))
                 ((SkinnedMeshRendererDatabase)target).Rebuild();
