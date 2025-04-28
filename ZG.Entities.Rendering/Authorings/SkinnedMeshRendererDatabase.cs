@@ -398,7 +398,7 @@ namespace ZG
                 
                 EditorUtility.SetDirty(oldTextures);
                 
-                DestroyImmediate(textures);
+                DestroyImmediate(textures, true);
             }
             else
                 AssetDatabase.AddObjectToAsset(textures, this);
