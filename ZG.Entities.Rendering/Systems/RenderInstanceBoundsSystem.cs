@@ -5,11 +5,6 @@ using Unity.Mathematics.Geometry;
 
 namespace ZG
 {
-    public struct RenderBounds : IComponentData
-    {
-        public MinMaxAABB aabb;
-    }
-
     public struct RenderBoundsWorld : IComponentData
     {
         public MinMaxAABB aabb;

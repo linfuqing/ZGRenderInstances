@@ -1,7 +1,7 @@
 {
   "name": "cn.com.zerogame.unitypackages.render-instances",
   "displayName": "ZGUP Render-Instances",
-  "version": "0.25.8",
+  "version": "0.26.0",
   "unity": "2022.3",
   "unityRelease": "0f1",
   "dependencies": {

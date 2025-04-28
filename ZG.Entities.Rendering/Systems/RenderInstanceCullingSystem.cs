@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 using Unity.Burst;
 using Unity.Burst.Intrinsics;
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -13,11 +12,6 @@ using Math = Unity.Mathematics.Geometry.Math;
 
 namespace ZG
 {
-    public struct RenderQueue : IComponentData
-    {
-        public int value;
-    }
-
     public struct RenderSingleton : IComponentData, IDisposable
     {
         public uint sharedDataVersion;

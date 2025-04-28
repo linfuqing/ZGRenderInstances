@@ -12,27 +12,27 @@ namespace ZG
 {
     public class MeshRendererBaker : Baker<MeshRenderer>
     {
-        public override void Bake(MeshRenderer authoring)
+        public static void Bake(
+            IBaker baker, 
+            in Entity entity, 
+            Renderer renderer, 
+            Mesh mesh, 
+            int subMeshStartIndex = 0, 
+            System.Action<int, Entity> onInit = null)
         {
-            var meshFilter = GetComponent<MeshFilter>();
-            if (meshFilter == null)
-                return;
-
-            var mesh = meshFilter.sharedMesh;
-
-            var entity = GetEntity(authoring, TransformUsageFlags.Renderable);
+            //var entity = baker.GetEntity(authoring, TransformUsageFlags.Renderable);
 
             RenderSharedData renderSharedData;
-            renderSharedData.subMeshIndex = authoring.subMeshStartIndex;
+            renderSharedData.subMeshIndex = subMeshStartIndex;
             renderSharedData.mesh = mesh;
-            renderSharedData.material = authoring.sharedMaterial;
-            AddSharedComponent(entity, renderSharedData);
+            renderSharedData.material = renderer.sharedMaterial;
+            baker.AddSharedComponent(entity, renderSharedData);
 
             var bounds = mesh.GetSubMesh(renderSharedData.subMeshIndex).bounds;
             
             RenderBounds renderBounds;
             renderBounds.aabb = MinMaxAABB.CreateFromCenterAndExtents(bounds.center, bounds.extents);
-            AddComponent(entity, renderBounds);
+            baker.AddComponent(entity, renderBounds);
 
             int count = mesh.subMeshCount - renderSharedData.subMeshIndex - 1;
             if (count > 0)
@@ -40,33 +40,33 @@ namespace ZG
                 using (var entities =
                        new NativeArray<Entity>(count, Allocator.Temp, NativeArrayOptions.UninitializedMemory))
                 {
-                    bool isStatic = IsStatic();
+                    bool isStatic = baker.IsStatic();
                     var flags = isStatic ? TransformUsageFlags.Renderable : TransformUsageFlags.Dynamic;
 
-                    CreateAdditionalEntities(entities, flags);
+                    baker.CreateAdditionalEntities(entities, flags);
 
                     LocalToWorld localToWorld;
-                    localToWorld.Value = authoring.transform.localToWorldMatrix;
+                    localToWorld.Value = renderer.transform.localToWorldMatrix;
 
                     int materialIndex = 0;
-                    var materials = authoring.sharedMaterials;
+                    var materials = renderer.sharedMaterials;
                     foreach (var entityToRender in entities)
                     {
                         ++renderSharedData.subMeshIndex;
 
                         renderSharedData.material = materials[++materialIndex];
 
-                        AddSharedComponent(entityToRender, renderSharedData);
-                        
-                        bounds = mesh.GetSubMesh(renderSharedData.subMeshIndex).bounds;
-                        
-                        renderBounds.aabb = MinMaxAABB.CreateFromCenterAndExtents(bounds.center, bounds.extents);
-                        AddComponent(entityToRender, renderBounds);
+                        baker.AddSharedComponent(entityToRender, renderSharedData);
 
-                        SetComponent(entityToRender, localToWorld);
+                        bounds = mesh.GetSubMesh(renderSharedData.subMeshIndex).bounds;
+
+                        renderBounds.aabb = MinMaxAABB.CreateFromCenterAndExtents(bounds.center, bounds.extents);
+                        baker.AddComponent(entityToRender, renderBounds);
+
+                        baker.SetComponent(entityToRender, localToWorld);
                     }
 
-                    if (!IsStatic())
+                    if (!isStatic)
                     {
                         Parent parent;
                         parent.Value = entity;
@@ -74,12 +74,32 @@ namespace ZG
                         LocalTransform localTransform = LocalTransform.Identity;
                         foreach (var entityToRender in entities)
                         {
-                            SetComponent(entityToRender, localTransform);
-                            AddComponent(entityToRender, parent);
+                            baker.SetComponent(entityToRender, localTransform);
+                            baker.AddComponent(entityToRender, parent);
                         }
+                    }
+
+                    if (onInit != null)
+                    {
+                        int numEntities = entities.Length;
+                        for(int i = 0; i < numEntities; ++i)
+                            onInit(i + 1, entities[i]);
                     }
                 }
             }
+            
+            if (onInit != null)
+                onInit(0, entity);
+        }
+        
+        public override void Bake(MeshRenderer authoring)
+        {
+            var meshFilter = GetComponent<MeshFilter>();
+            if (meshFilter == null)
+                return;
+            
+            Entity entity = GetEntity(authoring, TransformUsageFlags.Renderable);
+            Bake(this, entity, authoring, meshFilter.sharedMesh, authoring.subMeshStartIndex);
         }
     }
 }

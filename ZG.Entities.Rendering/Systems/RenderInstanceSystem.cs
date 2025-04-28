@@ -1,18 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Threading;
-using Unity.Burst;
-using Unity.Burst.Intrinsics;
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Mathematics;
-using Unity.Mathematics.Geometry;
-using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.Rendering;
-using Math = Unity.Mathematics.Geometry.Math;
 using Plane = UnityEngine.Plane;
 
 namespace ZG
@@ -401,82 +393,6 @@ namespace ZG
     public struct RenderLocalToWorld : IBufferElementData
     {
         public float4x4 value;
-    }
-
-    public readonly struct RenderConstantBuffer : IBufferElementData
-    {
-        private readonly int Index;
-        private readonly int Length;
-        
-        [NativeDisableUnsafePtrRestriction]
-        private readonly unsafe UnsafeList<int>* __byteOffset;
-        
-        [NativeDisableUnsafePtrRestriction]
-        private readonly unsafe byte* __bytes;
-
-        public unsafe bool isCreated => __bytes != null;
-
-        public unsafe RenderConstantBuffer(
-            int index, 
-            ref NativeList<int> byteOffset, 
-            ref NativeArray<byte> bytes)
-        {
-            Index = index;
-
-            Length = bytes.Length;
-
-            byteOffset[index] = 0;
-            
-            __byteOffset = byteOffset.GetUnsafeList();
-            
-            __bytes = (byte*)bytes.GetUnsafePtr();
-        }
-
-        public unsafe int Write(in NativeArray<byte> bytes)
-        {
-            int numBytes = bytes.Length, length = Interlocked.Add(ref __byteOffset->ElementAt(Index), numBytes);
-            UnityEngine.Assertions.Assert.IsTrue(length <= Length);
-            int offset = length - numBytes;
-            UnsafeUtility.MemCpy(__bytes + offset, bytes.GetUnsafeReadOnlyPtr(), numBytes);
-
-            return offset;
-        }
-    }
-
-    public struct RenderSharedData : ISharedComponentData, IEquatable<RenderSharedData>
-    {
-        public int subMeshIndex;
-        public UnityObjectRef<Mesh> mesh;
-        public UnityObjectRef<Material> material;
-        
-        public bool Equals(RenderSharedData other)
-        {
-            return subMeshIndex == other.subMeshIndex && 
-                   mesh.Equals(other.mesh) &&
-                   material.Equals(other.material);
-        }
-        
-        public override int GetHashCode()
-        {
-            return subMeshIndex ^ mesh.GetHashCode() ^ material.GetHashCode();
-        }
-    }
-
-    public struct RenderConstantType : ISharedComponentData, IEquatable<RenderConstantType>
-    {
-        public int bufferID;
-        public TypeIndex index;
-        
-        public override int GetHashCode()
-        {
-            return bufferID ^ index.GetHashCode();
-        }
-
-        public bool Equals(RenderConstantType other)
-        {
-            return bufferID == other.bufferID &&
-                   index.Equals(other.index);
-        }
     }
 
     public class RenderInstanceManager
