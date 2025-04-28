@@ -407,13 +407,13 @@ namespace ZG
             {
                 if (asset is Material material)
                 {
-                    _material.SetTexture(_textureName, textures);
+                    material.SetTexture(_textureName, textures);
                     
-                    _material.SetVector(_textureTexelSizeName, new Vector4(1.0f / textureWidth, 1.0f / textureHeight, textureWidth, textureHeight));
+                    material.SetVector(_textureTexelSizeName, new Vector4(1.0f / textureWidth, 1.0f / textureHeight, textureWidth, textureHeight));
 
-                    _material.enableInstancing = true;
+                    material.enableInstancing = true;
 
-                    EditorUtility.SetDirty(_material);
+                    EditorUtility.SetDirty(material);
                 }
             }
         }
