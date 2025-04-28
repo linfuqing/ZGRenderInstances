@@ -109,7 +109,7 @@ namespace ZG
             List<int> textureIndices)
         {
             Skin result;
-            result.pixelCount = CalculatedTexturePixels(1.0f, boneLength, targetFrameRate);
+            result.pixelCount = BONE_MATRIX_ROW_COUNT * boneLength;
 
             int numClips = animationClips.Length;
             //result.clips = new Clip[numClips];
