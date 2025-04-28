@@ -15,14 +15,16 @@ namespace UnityEditor.ShaderGraph
         IMayRequireTangent
     {
         public const int kTexSlotId = 0;
-        public const int kPositionSlotId = 1;
-        public const int kNormalSlotId = 2;
-        public const int kTangentSlotId = 3;
-        public const int kPositionOutputSlotId = 4;
-        public const int kNormalOutputSlotId = 5;
-        public const int kTangentOutputSlotId = 6;
+        public const int kTexelSizeSlotId = 1;
+        public const int kPositionSlotId = 2;
+        public const int kNormalSlotId = 3;
+        public const int kTangentSlotId = 4;
+        public const int kPositionOutputSlotId = 5;
+        public const int kNormalOutputSlotId = 6;
+        public const int kTangentOutputSlotId = 7;
 
         public const string kSlotTexName = "Animation Map";
+        public const string kSlotTexelSizeName = "Animation Map Texel Size";
         
         public const string kSlotPositionName = "Vertex Position";
         public const string kSlotNormalName = "Vertex Normal";
@@ -41,6 +43,8 @@ namespace UnityEditor.ShaderGraph
         {
             AddSlot(new Texture2DArrayInputMaterialSlot(kTexSlotId, kSlotTexName, kSlotTexName, ShaderStageCapability.Vertex));
             
+            AddSlot(new Vector4MaterialSlot(kTexelSizeSlotId, kSlotTexelSizeName, kSlotTexelSizeName, SlotType.Input, Vector4.zero, ShaderStageCapability.Vertex));
+
             AddSlot(new PositionMaterialSlot(kPositionSlotId, kSlotPositionName, kSlotPositionName,
                 CoordinateSpace.Object, ShaderStageCapability.Vertex));
             AddSlot(new NormalMaterialSlot(kNormalSlotId, kSlotNormalName, kSlotNormalName, CoordinateSpace.Object,
@@ -56,6 +60,7 @@ namespace UnityEditor.ShaderGraph
             RemoveSlotsNameNotMatching(new[]
             {
                 kTexSlotId, 
+                kTexelSizeSlotId, 
                 
                 kPositionSlotId, 
                 kNormalSlotId, 
@@ -129,6 +134,7 @@ namespace UnityEditor.ShaderGraph
             {
                 sb.AppendLine($"{GetFunctionName()}(" +
                               $"{GetSlotValue(kTexSlotId, generationMode)}, " +
+                              $"{GetSlotValue(kTexelSizeSlotId, generationMode)}, " +
                               $"IN.BoneIndices, " +
                               $"IN.BoneWeights, " +
                               $"{GetSlotValue(kPositionSlotId, generationMode)}, " +
@@ -170,11 +176,11 @@ namespace UnityEditor.ShaderGraph
             
             registry.ProvideFunction("SkinnedInstanceTex", sb =>
             {
-                sb.AppendLine($"float4 SkinnedInstanceTex(UnityTexture2DArray map, uint index, float depth)");
+                sb.AppendLine($"float4 SkinnedInstanceTex(UnityTexture2DArray map, float4 texelSize, uint index, float depth)");
                 sb.AppendLine("{");
                 using (sb.IndentScope())
                 {
-                    sb.AppendLine("float2 uv = SkinnedInstanceGetUV(index, map.texelSize);");
+                    sb.AppendLine("float2 uv = SkinnedInstanceGetUV(index, texelSize);");
                     sb.AppendLine("return SAMPLE_TEXTURE2D_ARRAY_LOD(map.tex, map.samplerstate, uv, depth, 0);");
                 }
 
@@ -183,15 +189,15 @@ namespace UnityEditor.ShaderGraph
             
             registry.ProvideFunction("SkinnedInstanceGetMatrix", sb =>
             {
-                sb.AppendLine($"float3x4 SkinnedInstanceGetMatrix(uint startIndex, uint boneIndex, float depth, UnityTexture2DArray map)");
+                sb.AppendLine($"float3x4 SkinnedInstanceGetMatrix(uint startIndex, uint boneIndex, float depth, float4 texelSize, UnityTexture2DArray map)");
                 sb.AppendLine("{");
                 using (sb.IndentScope())
                 {
                     //sb.AppendLine("#if (SHADER_TARGET >= 41)");
                     sb.AppendLine("uint matrixIndex = startIndex + boneIndex * 3;");
-                    sb.AppendLine("float4 row0 = SkinnedInstanceTex(map, matrixIndex + 0, depth));");
-                    sb.AppendLine("float4 row1 = SkinnedInstanceTex(map, matrixIndex + 1, depth));");
-                    sb.AppendLine("float4 row2 = SkinnedInstanceTex(map, matrixIndex + 2, depth));");
+                    sb.AppendLine("float4 row0 = SkinnedInstanceTex(map, texelSize, matrixIndex + 0, depth);");
+                    sb.AppendLine("float4 row1 = SkinnedInstanceTex(map, texelSize, matrixIndex + 1, depth);");
+                    sb.AppendLine("float4 row2 = SkinnedInstanceTex(map, texelSize, matrixIndex + 2, depth);");
                     //sb.AppendLine("#else");
                     //sb.AppendLine("float4 row0 = float4(1.0f, 0, 0, 0);");
                     //sb.AppendLine("float4 row1 = float4(0, 1.0f, 0, 0);");
@@ -208,6 +214,7 @@ namespace UnityEditor.ShaderGraph
             {
                 sb.AppendLine($"void {GetFunctionName()}(" +
                               "UnityTexture2DArray map, " +
+                              "$precision4 texelSize, " +
                               "uint4 indices, " +
                               "$precision4 weights, " +
                               "$precision3 positionIn, " +
@@ -234,7 +241,7 @@ namespace UnityEditor.ShaderGraph
                     sb.AppendLine("{");
                     using (sb.IndentScope())
                     {
-                        sb.AppendLine("$precision3x4 skinMatrix = SkinnedInstanceGetMatrix(pixelOffset, indices[i], depth, map);");
+                        sb.AppendLine("$precision3x4 skinMatrix = SkinnedInstanceGetMatrix(pixelOffset, indices[i], depth, texelSize, map);");
                         sb.AppendLine("$precision3 vtransformed = mul(skinMatrix, $precision4(positionIn, 1));");
                         sb.AppendLine("$precision3 ntransformed = mul(skinMatrix, $precision4(normalIn, 0));");
                         sb.AppendLine("$precision3 ttransformed = mul(skinMatrix, $precision4(tangentIn, 0));");
@@ -247,7 +254,7 @@ namespace UnityEditor.ShaderGraph
                     }
                     sb.AppendLine("}");
                     
-                    sb.AppendLine("$precision3x4 skinMatrix = SkinnedInstanceGetMatrix(pixelOffset, indices.w, depth, map);");
+                    sb.AppendLine("$precision3x4 skinMatrix = SkinnedInstanceGetMatrix(pixelOffset, indices.w, depth, texelSize, map);");
                     sb.AppendLine("$precision3 vtransformed = mul(skinMatrix, $precision4(positionIn, 1));");
                     sb.AppendLine("$precision3 ntransformed = mul(skinMatrix, $precision4(normalIn, 0));");
                     sb.AppendLine("$precision3 ttransformed = mul(skinMatrix, $precision4(tangentIn, 0));");

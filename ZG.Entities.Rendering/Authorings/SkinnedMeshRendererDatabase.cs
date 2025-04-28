@@ -55,6 +55,12 @@ namespace ZG
         internal int _maxTextureHeight = 2048;
 
         [SerializeField] 
+        internal string _textureName = "_AnimationMap";
+
+        [SerializeField] 
+        internal string _textureTexelSizeName = "_AnimationMap_TexelSize";
+
+        [SerializeField] 
         internal Material _material;
 
         [SerializeField]
@@ -67,8 +73,6 @@ namespace ZG
         internal Clip[] _clips;
 
         private Dictionary<Hash128, int> __renderIndices;
-        
-        public Material material => _material;
         
         public static SkinnedMeshRendererDatabase FindDatabase(GameObject gameObject)
         {
@@ -296,6 +300,9 @@ namespace ZG
             var skins = new Dictionary<SkinnedMeshRenderer, Skin>();
             foreach (var skinnedMeshRenderer in skinnedMeshRenderers)
             {
+                foreach (var material in skinnedMeshRenderer.sharedMaterials)
+                    GetOrCreateMaterial(material);
+                
                 animator = skinnedMeshRenderer.GetComponentInParent<Animator>();
                 if (animator == null)
                 {
@@ -394,12 +401,16 @@ namespace ZG
                 DestroyImmediate(textures);
             }
             else
-            {
                 AssetDatabase.AddObjectToAsset(textures, this);
-
-                if (_material != null)
+            
+            foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(this)))
+            {
+                if (asset is Material material)
                 {
-                    _material.mainTexture = textures;
+                    _material.SetTexture(_textureName, textures);
+                    
+                    _material.SetVector(_textureTexelSizeName, new Vector4(1.0f / textureWidth, 1.0f / textureHeight, textureWidth, textureHeight));
+
                     _material.enableInstancing = true;
 
                     EditorUtility.SetDirty(_material);
@@ -450,6 +461,22 @@ namespace ZG
             skin = default;
             
             return false;
+        }
+
+        public Material GetOrCreateMaterial(Material material)
+        {
+            var texture = material.mainTexture;
+            foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(this)))
+            {
+                if (asset is Material materialAsset && materialAsset.mainTexture == texture)
+                    return materialAsset;
+            }
+            
+            var newMaterial = new Material(_material);
+            newMaterial.mainTexture = texture;
+            AssetDatabase.AddObjectToAsset(newMaterial, this);
+
+            return newMaterial;
         }
 
         public BlobAssetReference<InstanceAnimationDefinition> CreateAnimationDefinition(
