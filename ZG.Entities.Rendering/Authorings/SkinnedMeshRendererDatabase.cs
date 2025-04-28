@@ -353,8 +353,11 @@ namespace ZG
                 textureWidth, 
                 textureHeight, 
                 textureDepth, 
-                DefaultFormat.LDR,
-                TextureCreationFlags.DontInitializePixels);
+                TextureFormat.RGBAHalf,
+                false, 
+                true);
+
+            textures.name = name;
 
             _renderers = new Renderer[skins.Count];
             
@@ -391,6 +394,9 @@ namespace ZG
             
             EditorUtility.SetDirty(this);
 
+            textures.Apply();
+            textures.filterMode = FilterMode.Point;
+            
             var oldTextures = AssetDatabase.LoadAssetAtPath<Texture2DArray>(AssetDatabase.GetAssetPath(this));
             if (oldTextures != null)
             {
