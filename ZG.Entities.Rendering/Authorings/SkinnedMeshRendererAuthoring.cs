@@ -72,36 +72,6 @@ namespace ZG
 
                 baker.AddComponent(entity, animation);
 
-                int clipIndex = -1;
-                if (!string.IsNullOrEmpty(defaultClipName))
-                {
-                    ref var clips = ref animation.definition.Value.clips;
-                    int numClips = clips.Length;
-                    for (int i = 0; i < numClips; ++i)
-                    {
-                        ref var clip = ref clips[i];
-                        if (clip.name == defaultClipName)
-                        {
-                            clipIndex = i;
-
-                            break;
-                        }
-                    }
-                }
-
-                if (clipIndex == -1)
-                {
-                    baker.AddComponent<InstanceAnimationStatus>(entity);
-                    baker.SetComponentEnabled<InstanceAnimationStatus>(entity, false);
-                }
-                else
-                {
-                    InstanceAnimationStatus status;
-                    status.clipIndex = clipIndex;
-                    status.time = 0.0f;
-                    baker.AddComponent(entity, status);
-                }
-
                 var renderers = baker.AddBuffer<InstanceSkinnedMeshRenderer>(entity);
 
                 Bake(baker, entity, skinnedMeshRenderers[0], database, renderers);
@@ -129,6 +99,47 @@ namespace ZG
                         }
                     }
                 }
+                
+                
+                int clipIndex = -1;
+                if (!string.IsNullOrEmpty(defaultClipName))
+                {
+                    ref var definition = ref animation.definition.Value;
+                    int numClips = definition.clips.Length;
+                    for (int i = 0; i < numClips; ++i)
+                    {
+                        ref var clip = ref definition.clips[i];
+                        if (clip.name == defaultClipName)
+                        {
+                            foreach (var renderer in renderers)
+                            {
+                                if (definition.renderers[renderer.index].IsInClip(i))
+                                {
+                                    clipIndex = i;
+                                    
+                                    break;
+                                }
+                            }
+
+                            if(clipIndex != -1)
+                                break;
+                        }
+                    }
+                }
+
+                if (clipIndex == -1)
+                {
+                    baker.AddComponent<InstanceAnimationStatus>(entity);
+                    baker.SetComponentEnabled<InstanceAnimationStatus>(entity, false);
+                }
+                else
+                {
+                    InstanceAnimationStatus status;
+                    status.clipIndex = clipIndex;
+                    status.time = 0.0f;
+                    baker.AddComponent(entity, status);
+                }
+
             }
 
             public override void Bake(SkinnedMeshRendererAuthoring authoring)

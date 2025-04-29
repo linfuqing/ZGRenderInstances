@@ -359,7 +359,7 @@ namespace ZG
                 pixels = pixelColors[skin.depthIndex];
                 if (pixels == null)
                 {
-                    pixels = textures.GetPixels(skin.depthIndex); //new Color[textureSize];
+                    pixels = new Color[textureSize];
                     
                     pixelColors[skin.depthIndex] = pixels;
                 }
