@@ -136,7 +136,7 @@ namespace ZG
 
             if (textureDepth < 2)
             {
-                result.depthIndex = textureDepth;
+                result.depthIndex = textureDepth - 1;
                 result.pixelIndex = totalPixels;
                 
                 totalPixels += result.pixelCount;
@@ -156,7 +156,7 @@ namespace ZG
 
                         result.pixelIndex = 0;
 
-                        result.depthIndex = ++textureDepth;
+                        result.depthIndex = textureDepth++;
                         
                         break;
                     }
@@ -176,19 +176,21 @@ namespace ZG
                     if (textureSize - result.pixelIndex >= result.pixelCount)
                         break;
                 }
-                    
-                if(i < textureDepth)
+
+                if (i < textureDepth)
+                {
                     textureIndices[i] += result.pixelCount;
+
+                    result.depthIndex = i;
+                }
                 else
                 {
                     textureIndices.Add(result.pixelCount);
 
                     result.pixelIndex = 0;
                     
-                    ++textureDepth;
+                    result.depthIndex = textureDepth++;
                 }
-                
-                result.depthIndex = textureDepth;
             }
 
             result.pixelCountPerFrame = boneLength * BONE_MATRIX_ROW_COUNT;
