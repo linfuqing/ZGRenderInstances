@@ -247,7 +247,7 @@ namespace ZG
             
             var pixels = new Color[pixelCount];
             var span = pixels.AsSpan();
-            GenerateAnimationTexture(clips, smr, targetObject, pixelCount, ref span);
+            GenerateAnimationTexture(clips, smr, targetObject, targetFrameRate, ref span);
             
             return Hash128.Compute(pixels);
         }
@@ -346,7 +346,8 @@ namespace ZG
             
             int textureSize = textureWidth * textureHeight, rendererIndex = 0;
             Span<Color> subPixels;
-            Color[] pixelColors = new Color[textureSize];
+            Color[] pixels;
+            var pixelColors = new Color[textureDepth][];
             foreach (var skinnedMeshRenderer in skinnedMeshRenderers)
             {
                 animator = skinnedMeshRenderer.GetComponentInParent<Animator>(true);
@@ -355,7 +356,15 @@ namespace ZG
 
                 skin = skins[skinnedMeshRenderer];
 
-                subPixels = pixelColors.AsSpan(skin.pixelIndex, skin.pixelCount);
+                pixels = pixelColors[skin.depthIndex];
+                if (pixels == null)
+                {
+                    pixels = new Color[textureSize];
+                    
+                    pixelColors[skin.depthIndex] = pixels;
+                }
+
+                subPixels = pixels.AsSpan(skin.pixelIndex, skin.pixelCount);
 
                 animationClips = animator.runtimeAnimatorController.animationClips;
                 GenerateAnimationTexture(
@@ -367,7 +376,7 @@ namespace ZG
 
                 ref var renderer = ref _renderers[rendererIndex++];
                 
-                renderer.hash = Hash128.Compute(pixelColors, skin.pixelIndex, skin.pixelCount);
+                renderer.hash = Hash128.Compute(pixels, skin.pixelIndex, skin.pixelCount);
 
                 renderer.skin = skin;
 
@@ -375,11 +384,14 @@ namespace ZG
                 renderer.clipCount = animationClips.Length;
             }
             
-            EditorUtility.SetDirty(this);
-
+            for(int i = 0; i < textureDepth; ++i)
+                textures.SetPixels(pixelColors[i], i);
+            
             textures.Apply();
             textures.filterMode = FilterMode.Point;
-            
+
+            EditorUtility.SetDirty(this);
+
             var oldTextures = AssetDatabase.LoadAssetAtPath<Texture2DArray>(AssetDatabase.GetAssetPath(this));
             if (oldTextures != null)
             {
@@ -445,6 +457,8 @@ namespace ZG
             {
                 ref var renderer = ref _renderers[rendererIndex];
                 skin = renderer.skin;
+                
+                return true;
             }
 
             skin = default;
