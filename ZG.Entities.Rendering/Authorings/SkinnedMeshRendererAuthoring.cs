@@ -135,7 +135,7 @@ namespace ZG
             public override void Bake(SkinnedMeshRendererAuthoring authoring)
             {
                 Entity entity = GetEntity(authoring, TransformUsageFlags.Renderable);
-                Bake(this, entity, authoring._prefab);
+                Bake(this, entity, authoring._prefab, authoring._defaultClipName);
             }
         }
 
