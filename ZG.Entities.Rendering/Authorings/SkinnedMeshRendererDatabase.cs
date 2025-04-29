@@ -235,37 +235,21 @@ namespace ZG
             }
         }
 
-        public static void GenerateSkinHash(
+        public static Hash128 GenerateSkinHash(
             IEnumerable<AnimationClip> clips,
             SkinnedMeshRenderer smr,
             GameObject targetObject,
-            int targetFrameRate,
-            ref Hash128 hash)
+            int targetFrameRate)
         {
-            Matrix4x4 matrix;
-            var bones = smr.bones;
-            var bindposes = smr.sharedMesh.bindposes;
-            //Setup 0 to bindPoses
-            foreach (var boneMatrix in bones.Select((b, idx) => b.localToWorldMatrix * bindposes[idx]))
-            {
-                matrix = boneMatrix;
-                HashUtilities.QuantisedMatrixHash(ref matrix, ref hash);
-            }
-
+            int boneLength = smr.bones.Length, pixelCount = BONE_MATRIX_ROW_COUNT * boneLength;
             foreach (var clip in clips)
-            {
-                var totalFrames = (int)(clip.length * targetFrameRate);
-                foreach (var frame in Enumerable.Range(0, totalFrames))
-                {
-                    clip.SampleAnimation(targetObject, (float)frame / targetFrameRate);
-
-                    foreach (var boneMatrix in bones.Select((b, idx) => b.localToWorldMatrix * bindposes[idx]))
-                    {
-                        matrix = boneMatrix;
-                        HashUtilities.QuantisedMatrixHash(ref matrix, ref hash);
-                    }
-                }
-            }
+                pixelCount += CalculatedTexturePixels(clip.length, boneLength, targetFrameRate);
+            
+            var pixels = new Color[pixelCount];
+            var span = pixels.AsSpan();
+            GenerateAnimationTexture(clips, smr, targetObject, pixelCount, ref span);
+            
+            return Hash128.Compute(pixels);
         }
 
         public Hash128 GenerateSkinHash(SkinnedMeshRenderer skinnedMeshRenderer)
@@ -277,11 +261,8 @@ namespace ZG
                 return default;
             }
 
-            Hash128 hash = default;
-            GenerateSkinHash(animator.runtimeAnimatorController.animationClips, skinnedMeshRenderer,
-                animator.gameObject, _targetFrameRate, ref hash);
-
-            return hash;
+            return GenerateSkinHash(animator.runtimeAnimatorController.animationClips, skinnedMeshRenderer,
+                animator.gameObject, _targetFrameRate);
         }
         
         public void Rebuild(SkinnedMeshRenderer[] skinnedMeshRenderers)
