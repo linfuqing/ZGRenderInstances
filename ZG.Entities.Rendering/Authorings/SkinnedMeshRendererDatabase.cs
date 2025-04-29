@@ -270,7 +270,7 @@ namespace ZG
 
         public Hash128 GenerateSkinHash(SkinnedMeshRenderer skinnedMeshRenderer)
         {
-            var animator = skinnedMeshRenderer.GetComponentInParent<Animator>();
+            var animator = skinnedMeshRenderer.GetComponentInParent<Animator>(true);
             if (animator == null)
             {
                 EditorUtility.DisplayDialog("Warning", "Selected object does not have Animator.", "OK");
@@ -305,7 +305,7 @@ namespace ZG
                 foreach (var material in skinnedMeshRenderer.sharedMaterials)
                     GetOrCreateMaterial(material);
                 
-                animator = skinnedMeshRenderer.GetComponentInParent<Animator>(!skinnedMeshRenderer.gameObject.activeInHierarchy);
+                animator = skinnedMeshRenderer.GetComponentInParent<Animator>(true);
                 if (animator == null)
                 {
                     EditorUtility.DisplayDialog("Warning", "Selected object does not have Animator.", "OK");
@@ -368,7 +368,7 @@ namespace ZG
             Color[] pixelColors = new Color[textureSize];
             foreach (var skinnedMeshRenderer in skinnedMeshRenderers)
             {
-                animator = skinnedMeshRenderer.GetComponentInParent<Animator>(!skinnedMeshRenderer.gameObject.activeInHierarchy);
+                animator = skinnedMeshRenderer.GetComponentInParent<Animator>(true);
                 if (animator == null)
                     continue;
 
