@@ -103,7 +103,6 @@ namespace ZG
                 }
 
                 var renderers = baker.AddBuffer<InstanceSkinnedMeshRenderer>(entity);
-                renderers.ResizeUninitialized(numSkinnedMeshRenderers);
 
                 Bake(baker, entity, skinnedMeshRenderers[0], database, renderers);
 
