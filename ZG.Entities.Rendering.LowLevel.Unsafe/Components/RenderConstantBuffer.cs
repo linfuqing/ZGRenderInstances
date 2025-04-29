@@ -43,7 +43,7 @@ namespace ZG
         public unsafe int Write(in NativeArray<byte> bytes)
         {
             int numBytes = bytes.Length, 
-                bytesToOffset = Math.Max(Alignment, numBytes), 
+                bytesToOffset = (numBytes + Alignment - 1) / Alignment * Alignment, 
                 length = Interlocked.Add(ref __byteOffset->ElementAt(Index), bytesToOffset);
             UnityEngine.Assertions.Assert.IsTrue(length <= Length);
             int offset = length - bytesToOffset;
