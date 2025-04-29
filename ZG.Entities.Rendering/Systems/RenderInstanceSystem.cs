@@ -210,7 +210,7 @@ namespace ZG
             ref DynamicBuffer<RenderConstantBuffer> constantBuffers)
         {
             var computeBuffers = __GetComputeBuffers();
-            if (computeBuffers == null)
+            if (computeBuffers == null || constantTypeEntityCount < 1)
                 constantBuffers.Clear();
             else
             {

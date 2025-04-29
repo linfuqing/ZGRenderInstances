@@ -17,11 +17,11 @@ namespace ZG
                 in Entity entity,
                 SkinnedMeshRenderer skinnedMeshRenderer,
                 SkinnedMeshRendererDatabase database,
-                out int rendererIndex)
+                DynamicBuffer<InstanceSkinnedMeshRenderer> instanceSkinnedMeshRenderers)
             {
                 if (!database.GetSkin(skinnedMeshRenderer, 
                         out var skin, 
-                        out rendererIndex))
+                        out int rendererIndex))
                     return false;
 
                 RenderConstantType constantType;
@@ -39,6 +39,11 @@ namespace ZG
                 sharedData.mesh = skinnedMeshRenderer.sharedMesh;
                 MeshRendererBaker.Bake(baker, entity, skinnedMeshRenderer, sharedData.mesh, 0, (subMeshIndex, entity) =>
                 {
+                    InstanceSkinnedMeshRenderer instanceSkinnedMeshRenderer;
+                    instanceSkinnedMeshRenderer.index = rendererIndex;
+                    instanceSkinnedMeshRenderer.entity = entity;
+                    instanceSkinnedMeshRenderers.Add(instanceSkinnedMeshRenderer);
+                    
                     baker.AddComponent(entity, skinnedData);
                     baker.AddSharedComponent(entity, constantType);
 
@@ -50,7 +55,7 @@ namespace ZG
                 return true;
             }
 
-            public static void Bake(IBaker baker, in Entity entity, GameObject gameObject)
+            public static void Bake(IBaker baker, in Entity entity, GameObject gameObject, string defaultClipName)
             {
                 var skinnedMeshRenderers = gameObject.GetComponentsInChildren<SkinnedMeshRenderer>();
                 int numSkinnedMeshRenderers = skinnedMeshRenderers.Length;
@@ -61,22 +66,46 @@ namespace ZG
                 if (database == null)
                     return;
 
-                baker.AddComponent<InstanceAnimationStatus>(entity);
-                baker.SetComponentEnabled<InstanceAnimationStatus>(entity, false);
-
-                InstanceAnimationData animation;
+                InstanceAnimationDefinitionData animation;
                 animation.definition = database.CreateAnimationDefinition(Allocator.Persistent);
                 baker.AddBlobAsset(ref animation.definition, out _);
 
                 baker.AddComponent(entity, animation);
 
+                int clipIndex = -1;
+                if (!string.IsNullOrEmpty(defaultClipName))
+                {
+                    ref var clips = ref animation.definition.Value.clips;
+                    int numClips = clips.Length;
+                    for (int i = 0; i < numClips; ++i)
+                    {
+                        ref var clip = ref clips[i];
+                        if (clip.name == defaultClipName)
+                        {
+                            clipIndex = i;
+
+                            break;
+                        }
+                    }
+                }
+
+                if (clipIndex == -1)
+                {
+                    baker.AddComponent<InstanceAnimationStatus>(entity);
+                    baker.SetComponentEnabled<InstanceAnimationStatus>(entity, false);
+                }
+                else
+                {
+                    InstanceAnimationStatus status;
+                    status.clipIndex = clipIndex;
+                    status.time = 0.0f;
+                    baker.AddComponent(entity, status);
+                }
+
                 var renderers = baker.AddBuffer<InstanceSkinnedMeshRenderer>(entity);
                 renderers.ResizeUninitialized(numSkinnedMeshRenderers);
 
-                InstanceSkinnedMeshRenderer renderer;
-                Bake(baker, entity, skinnedMeshRenderers[0], database, out renderer.index);
-                renderer.entity = entity;
-                renderers[0] = renderer;
+                Bake(baker, entity, skinnedMeshRenderers[0], database, renderers);
 
                 if (numSkinnedMeshRenderers > 1)
                 {
@@ -93,9 +122,7 @@ namespace ZG
                         for (int i = 1; i < numSkinnedMeshRenderers; ++i)
                         {
                             child = entityArray[i - 1];
-                            Bake(baker, child, skinnedMeshRenderers[i], database, out renderer.index);
-                            renderer.entity = child;
-                            renderers[i] = renderer;
+                            Bake(baker, child, skinnedMeshRenderers[i], database, renderers);
 
                             baker.AddComponent(child, parent);
 
@@ -111,6 +138,9 @@ namespace ZG
                 Bake(this, entity, authoring._prefab);
             }
         }
+
+        [SerializeField] 
+        internal string _defaultClipName = "Idle";
         
         [SerializeField]
         internal GameObject _prefab;

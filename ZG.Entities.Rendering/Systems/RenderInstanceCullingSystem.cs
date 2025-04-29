@@ -77,7 +77,7 @@ namespace ZG
         }
     }
 
-    [BurstCompile, UpdateInGroup(typeof(TransformSystemGroup))]
+    [BurstCompile, UpdateAfter(typeof(TransformSystemGroup))]
     public partial struct RenderInstanceCullingSystem : ISystem
     {
         [StructLayout(LayoutKind.Sequential)]

@@ -168,7 +168,7 @@ namespace UnityEditor.ShaderGraph
                     sb.AppendLine("uint z = (uint)texelSize.z;");
                     sb.AppendLine("uint row = index / z;");
                     sb.AppendLine("uint col = index % z;");
-                    sb.AppendLine("return float2(col / texelSize.z, row / texelSize.w);");
+                    sb.AppendLine("return float2(col * texelSize.x, row * texelSize.y);");
                 }
 
                 sb.AppendLine("}");

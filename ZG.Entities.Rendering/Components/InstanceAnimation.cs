@@ -89,7 +89,7 @@ namespace ZG
         public BlobArray<Renderer> renderers;
     }
     
-    public struct InstanceAnimationData : IComponentData
+    public struct InstanceAnimationDefinitionData : IComponentData
     {
         public BlobAssetReference<InstanceAnimationDefinition> definition;
     }
