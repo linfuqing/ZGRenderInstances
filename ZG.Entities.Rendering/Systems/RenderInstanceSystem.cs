@@ -168,8 +168,14 @@ namespace ZG
         
         private uint __constantTypeVersion;
         private int __constantTypeEntityCount;
+        private int __sharedDataCount;
         private NativeHashMap<int, int> __computeBufferStrideToIndices;
         private NativeList<int> __byteOffsets;
+
+        public static int ComputeCount(int sharedDataCount, int constantTypeEntityCount, int alignment, int stride)
+        {
+            return math.max(constantTypeEntityCount, (alignment + stride - 1) / stride) * sharedDataCount;
+        }
 
         public RenderList(int instanceID, in AllocatorManager.AllocatorHandle allocator)
         {
@@ -182,6 +188,7 @@ namespace ZG
                     computeBuffers,
                     GCHandleType.Pinned)*/;
 
+            __sharedDataCount = 0;
             __constantTypeEntityCount = 0;
             __constantTypeVersion = 0;
             __computeBufferStrideToIndices = new NativeHashMap<int, int>(1, allocator);
@@ -204,6 +211,7 @@ namespace ZG
         }
 
         public void Begin(
+            int sharedDataCount, 
             int constantTypeEntityCount, 
             uint constantTypeVersion, 
             in NativeArray<RenderConstantType> constantTypes, 
@@ -216,10 +224,16 @@ namespace ZG
             {
                 ComputeBuffer computeBuffer;
                 RenderConstantType constantType;
-                int i, stride, computeBufferIndex, numConstantTypes = constantTypes.Length;
-                if (constantTypeEntityCount > __constantTypeEntityCount ||
+                int i, 
+                    stride, 
+                    computeBufferIndex, 
+                    numConstantTypes = constantTypes.Length, 
+                    alignment = SystemInfo.constantBufferOffsetAlignment;
+                if (sharedDataCount > __sharedDataCount || 
+                    constantTypeEntityCount > __constantTypeEntityCount ||
                     ChangeVersionUtility.DidChange(constantTypeVersion, __constantTypeVersion))
                 {
+                    __sharedDataCount = sharedDataCount;
                     __constantTypeEntityCount = constantTypeEntityCount;
                     __constantTypeVersion = constantTypeVersion;
 
@@ -247,7 +261,10 @@ namespace ZG
                         
                         __computeBufferStrideToIndices[stride] = computeBufferIndex;
                         
-                        computeBuffer = new ComputeBuffer(constantTypeEntityCount, stride, ComputeBufferType.Constant,
+                        computeBuffer = new ComputeBuffer(
+                            ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride), 
+                            stride, 
+                            ComputeBufferType.Constant,
                             ComputeBufferMode.SubUpdates);
 
                         computeBuffers.Add(computeBuffer);
@@ -280,9 +297,12 @@ namespace ZG
                     if (!constantBuffers[computeBufferOffset].isCreated)
                     {
                         computeBuffer = computeBuffers[computeBufferIndex];
-                        bytes = computeBuffer.BeginWrite<byte>(0, constantTypeEntityCount * stride);
+                        bytes = computeBuffer.BeginWrite<byte>(
+                            0, 
+                            ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride) * stride);
                         
                         constantBuffers[computeBufferOffset] = new RenderConstantBuffer(
+                            alignment, 
                             computeBufferIndex, 
                             ref __byteOffsets, 
                             ref bytes);
@@ -565,7 +585,8 @@ namespace ZG
             __chunks.Update(__system);
             __localToWorlds.Update(__system);
             __frustumPlanes.Update(__system);
-            
+
+            int sharedDataCount = singleton.sharedDatas.Length;
             DynamicBuffer<RenderConstantBuffer> constantBuffers;
             for (i = 0; i < allCamerasCount; ++i)
             {
@@ -574,6 +595,7 @@ namespace ZG
 
                 constantBuffers = __constantBuffers[entity];
                 __renderLists.GetRefRW(entity).ValueRW.Begin(
+                    sharedDataCount, 
                     constantTypeEntityCount, 
                     constantTypeVersion, 
                     constantTypes, 

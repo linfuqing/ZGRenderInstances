@@ -740,7 +740,7 @@ namespace ZG
                     RenderChunk renderChunk;
                     renderChunk.sharedDataIndex = -1;
                     renderChunk.constantTypeIndex = -1;
-                    renderChunk.constantByteOffset = 0;
+                    //renderChunk.constantByteOffset = 0;
                     renderChunk.count = 0;
                     
                     var constantBuffers = this.constantBuffers[index];
@@ -748,16 +748,24 @@ namespace ZG
                     int i,
                         constantByteOffset,
                         constantTypeStride = 0;
-                    //RenderConstantType renderConstantType;
                     RenderLocalToWorld renderLocalToWorld;
                     EntityStorageInfo entityStorageInfo;
                     DynamicComponentTypeHandle constantType = default;
-                    RenderConstantBuffer constantBuffer = default;
                     NativeArray<byte> bytes;
+                    NativeList<byte> caches = default;
                     foreach (var temp in instances)
                     {
                         if (renderChunk.sharedDataIndex != temp.sharedDataIndex)
                         {
+                            if (caches.IsEmpty)
+                                renderChunk.constantByteOffset = 0;
+                            else
+                            {
+                                renderChunk.constantByteOffset = constantBuffers[renderChunk.constantTypeIndex].Write(caches.AsArray());
+                                
+                                caches.Clear();
+                            }
+
                             if(renderChunk.count > 0)
                                 renderChunks.Add(renderChunk);
                             
@@ -769,17 +777,24 @@ namespace ZG
                         entityStorageInfo = entityStorageInfos[temp.entity];
                         if (temp.constantTypeIndex != renderChunk.constantTypeIndex)
                         {
+                            if (caches.IsEmpty)
+                                renderChunk.constantByteOffset = 0;
+                            else
+                            {
+                                renderChunk.constantByteOffset = constantBuffers[renderChunk.constantTypeIndex].Write(caches.AsArray());
+                                
+                                caches.Clear();
+                            }
+
                             if(renderChunk.count > 0)
                                 renderChunks.Add(renderChunk);
                             
                             renderChunk.count = 0;
 
-                            renderChunk.constantByteOffset = 0;
                             renderChunk.constantTypeIndex = temp.constantTypeIndex;
 
                             if (temp.constantTypeIndex != -1)
                             {
-                                constantBuffer = constantBuffers[temp.constantTypeIndex];
                                 constantType = constantTypeArray[temp.constantTypeIndex];
                                     
                                 constantTypeStride = TypeManager
@@ -795,11 +810,11 @@ namespace ZG
                                 constantTypeStride);
                             
                             constantByteOffset = entityStorageInfo.IndexInChunk * constantTypeStride;
-                            constantByteOffset =
-                                constantBuffer.Write(bytes.GetSubArray(constantByteOffset, constantTypeStride));
                             
-                            if(renderChunk.count == 0)
-                                renderChunk.constantByteOffset = constantByteOffset;
+                            if(!caches.IsCreated)
+                                caches = new NativeList<byte>(Allocator.Temp);
+                            
+                            caches.AddRange(bytes.GetSubArray(constantByteOffset, constantTypeStride));
                         }
 
                         renderLocalToWorld.value = localToWorlds[temp.entity].Value;
@@ -808,8 +823,16 @@ namespace ZG
                         ++renderChunk.count;
                     }
                     
+                    if (caches.IsEmpty)
+                        renderChunk.constantByteOffset = 0;
+                    else
+                        renderChunk.constantByteOffset = constantBuffers[renderChunk.constantTypeIndex].Write(caches.AsArray());
+
                     if(renderChunk.count > 0)
                         renderChunks.Add(renderChunk);
+
+                    if (caches.IsCreated)
+                        caches.Dispose();
 
                     instances.Dispose();
                 }
