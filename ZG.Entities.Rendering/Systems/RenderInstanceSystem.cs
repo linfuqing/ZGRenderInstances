@@ -480,10 +480,10 @@ namespace ZG
         public void Begin(int constantTypeEntityCount)
         {
             if (isBegin)
-                return;
+                End();
             
             isBegin = true;
-            
+
             var entityManager = __system.EntityManager;
             ref var singleton = ref entityManager.GetComponentDataRW<RenderSingleton>(__system.SystemHandle).ValueRW;
             singleton.Update(ref entityManager);
