@@ -561,32 +561,21 @@ namespace ZG
 
             public int CompareTo(Instance other)
             {
-                int result = renderQueue.CompareTo(other.renderQueue);
+                int result = sharedDataIndex.CompareTo(other.sharedDataIndex);
                 if (result != 0)
                     return result;
                 
-                if (renderQueue > (int)UnityEngine.Rendering.RenderQueue.GeometryLast)
-                {
-                    result = other.depth.CompareTo(depth);
-                    if (result != 0)
-                        return result;
-                    
-                    result = sharedDataIndex.CompareTo(other.sharedDataIndex);
-                    if (result != 0)
-                        return result;
-                }
-                else
-                {
-                    result = sharedDataIndex.CompareTo(other.sharedDataIndex);
-                    if (result != 0)
-                        return result;
+                result = constantTypeIndex.CompareTo(other.constantTypeIndex);
+                if (result != 0)
+                    return result;
 
-                    result = depth.CompareTo(other.depth);
-                    if (result != 0)
-                        return result;
-                }
+                result = renderQueue.CompareTo(other.renderQueue);
+                if (result != 0)
+                    return result;
 
-                return constantTypeIndex.CompareTo(other.constantTypeIndex);
+                return renderQueue > (int)UnityEngine.Rendering.RenderQueue.GeometryLast
+                    ? other.depth.CompareTo(depth)
+                    : depth.CompareTo(other.depth);
             }
 
             public override int GetHashCode()
