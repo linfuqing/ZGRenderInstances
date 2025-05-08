@@ -586,7 +586,7 @@ namespace ZG
             __localToWorlds.Update(__system);
             __frustumPlanes.Update(__system);
 
-            int sharedDataCount = singleton.queues.Length * singleton.sharedDatas.Length;
+            int sharedDataCount = math.max(singleton.queues.Length, 1) * singleton.sharedDatas.Length;
             DynamicBuffer<RenderConstantBuffer> constantBuffers;
             for (i = 0; i < allCamerasCount; ++i)
             {

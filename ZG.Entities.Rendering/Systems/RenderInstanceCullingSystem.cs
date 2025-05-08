@@ -580,15 +580,15 @@ namespace ZG
 
             public int CompareTo(Instance other)
             {
-                int result = sharedDataIndex.CompareTo(other.sharedDataIndex);
+                int result = renderQueue.CompareTo(other.renderQueue);
+                if (result != 0)
+                    return result;
+
+                result = sharedDataIndex.CompareTo(other.sharedDataIndex);
                 if (result != 0)
                     return result;
                 
                 result = constantTypeIndex.CompareTo(other.constantTypeIndex);
-                if (result != 0)
-                    return result;
-
-                result = renderQueue.CompareTo(other.renderQueue);
                 if (result != 0)
                     return result;
 
