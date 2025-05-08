@@ -87,7 +87,7 @@ namespace ZG
                 int numConstantTypes = constantTypes.Length;
                 for (int i = 0; i < numConstantTypes; ++i)
                 {
-                    if (constantTypes[i].index == TypeIndex.Null)
+                    if (TypeManager.GetTypeIndexFromStableTypeHash(constantTypes[i].stableTypeHash) == TypeIndex.Null)
                     {
                         constantTypes.RemoveAtSwapBack(i--);
 
@@ -530,7 +530,7 @@ namespace ZG
                 componentType.AccessModeType = ComponentType.AccessMode.ReadOnly;
                 foreach (var constantType in constantTypes)
                 {
-                    componentType.TypeIndex = constantType.index;
+                    componentType.TypeIndex = TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash);
                     //if(componentType.TypeIndex == TypeIndex.Null)
                     //    continue;
                     
@@ -813,9 +813,11 @@ namespace ZG
                             if (temp.constantTypeIndex != -1)
                             {
                                 constantType = constantTypeArray[temp.constantTypeIndex];
-                                    
+
                                 constantTypeStride = TypeManager
-                                    .GetTypeInfo(constantTypes[temp.constantTypeIndex].index)
+                                    .GetTypeInfo(
+                                        TypeManager.GetTypeIndexFromStableTypeHash(constantTypes[temp.constantTypeIndex]
+                                            .stableTypeHash))
                                     .TypeSize;
                             }
                         }

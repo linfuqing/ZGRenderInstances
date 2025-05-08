@@ -7,17 +7,17 @@ namespace ZG
     public struct RenderConstantType : ISharedComponentData, IEquatable<RenderConstantType>
     {
         public FixedString128Bytes bufferName;
-        public TypeIndex index;
+        public ulong stableTypeHash;
 
         public override int GetHashCode()
         {
-            return bufferName.GetHashCode() ^ index.GetHashCode();
+            return bufferName.GetHashCode() ^ stableTypeHash.GetHashCode();
         }
 
         public bool Equals(RenderConstantType other)
         {
             return bufferName == other.bufferName &&
-                   index.Equals(other.index);
+                   stableTypeHash.Equals(other.stableTypeHash);
         }
     }
 }

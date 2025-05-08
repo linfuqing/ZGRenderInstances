@@ -249,7 +249,7 @@ namespace ZG
                     for (i = 0; i < numConstantTypes; ++i)
                     {
                         constantType = constantTypes[i];
-                        stride = TypeManager.GetTypeInfo(constantType.index).TypeSize;
+                        stride = TypeManager.GetTypeInfo(TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash)).TypeSize;
                         if(stride < 1)
                             continue;
 
@@ -287,7 +287,7 @@ namespace ZG
                 for (i = 0; i < numConstantTypes; ++i)
                 {
                     constantType = constantTypes[i];
-                    stride = TypeManager.GetTypeInfo(constantType.index).TypeSize;
+                    stride = TypeManager.GetTypeInfo(TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash)).TypeSize;
                     if (stride < 1)
                     {
                         constantBuffers[i] = default;
@@ -363,7 +363,7 @@ namespace ZG
                             __bufferIDs[constantType.bufferName] = bufferID;
                         }
                         
-                        stride = TypeManager.GetTypeInfo(constantType.index).TypeSize;
+                        stride = TypeManager.GetTypeInfo(TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash)).TypeSize;
                         commandBuffer.SetGlobalConstantBuffer(
                             computeBuffers[__computeBufferStrideToIndices[stride]],
                             bufferID,

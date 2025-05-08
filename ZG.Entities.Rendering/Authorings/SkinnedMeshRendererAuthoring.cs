@@ -26,7 +26,7 @@ namespace ZG
 
                 RenderConstantType constantType;
                 constantType.bufferName = "UnityInstancing_SkinnedInstance";
-                constantType.index = TypeManager.GetTypeIndex<RenderSkinnedData>();
+                constantType.stableTypeHash = TypeManager.GetTypeInfo<RenderSkinnedData>().StableTypeHash;
 
                 RenderSkinnedData skinnedData;
                 skinnedData.depth = skin.depthIndex;

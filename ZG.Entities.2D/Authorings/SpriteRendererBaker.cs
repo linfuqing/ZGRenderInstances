@@ -127,8 +127,8 @@ namespace ZG
             AddComponent(entity, instanceData);
 
             RenderConstantType constantType;
-            constantType.index = TypeManager.GetTypeIndex<SpriteRenderInstanceData>();
             constantType.bufferName = "UnityInstancing_SpriteInstance";
+            constantType.stableTypeHash = TypeManager.GetTypeInfo<SpriteRenderInstanceData>().StableTypeHash;
             AddSharedComponent(entity, constantType);
         }
     }
