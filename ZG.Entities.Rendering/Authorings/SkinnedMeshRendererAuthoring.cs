@@ -10,7 +10,7 @@ namespace ZG
 {
     public class SkinnedMeshRendererAuthoring : MonoBehaviour
     {
-        public class SkinnedMeshRendererBaker : Baker<SkinnedMeshRendererAuthoring>
+        public class Baker : Baker<SkinnedMeshRendererAuthoring>
         {
             public static bool Bake(
                 IBaker baker,
@@ -70,8 +70,6 @@ namespace ZG
                 animation.definition = database.CreateAnimationDefinition(Allocator.Persistent);
                 baker.AddBlobAsset(ref animation.definition, out _);
 
-                baker.AddComponent(entity, animation);
-
                 var renderers = baker.AddBuffer<InstanceSkinnedMeshRenderer>(entity);
 
                 Bake(baker, entity, skinnedMeshRenderers[0], database, renderers);
@@ -100,33 +98,27 @@ namespace ZG
                     }
                 }
                 
+                ref var definition = ref animation.definition.Value;
                 
-                int clipIndex = -1;
-                if (!string.IsNullOrEmpty(defaultClipName))
+                animation.clipStartIndex = definition.clips.Length;
+                animation.clipCount = 0;
+                
+                foreach (var renderer in renderers)
                 {
-                    ref var definition = ref animation.definition.Value;
-                    int numClips = definition.clips.Length;
-                    for (int i = 0; i < numClips; ++i)
-                    {
-                        ref var clip = ref definition.clips[i];
-                        if (clip.name == defaultClipName)
-                        {
-                            foreach (var renderer in renderers)
-                            {
-                                if (definition.renderers[renderer.index].IsInClip(i))
-                                {
-                                    clipIndex = i;
-                                    
-                                    break;
-                                }
-                            }
+                    ref var rendererDefinition = ref definition.renderers[renderer.index];
 
-                            if(clipIndex != -1)
-                                break;
-                        }
-                    }
+                    animation.clipStartIndex = Mathf.Min(animation.clipStartIndex, rendererDefinition.clipStartIndex);
+                    animation.clipCount =
+                        Mathf.Max(animation.clipStartIndex + animation.clipCount,
+                            rendererDefinition.clipStartIndex + rendererDefinition.clipCount) -
+                        animation.clipStartIndex;
                 }
+                
+                baker.AddComponent(entity, animation);
 
+                int clipIndex = string.IsNullOrEmpty(defaultClipName)
+                    ? -1
+                    : animation.IndexOfClip(defaultClipName);
                 if (clipIndex == -1)
                 {
                     baker.AddComponent<InstanceAnimationStatus>(entity);
@@ -139,7 +131,6 @@ namespace ZG
                     status.time = 0.0f;
                     baker.AddComponent(entity, status);
                 }
-
             }
 
             public override void Bake(SkinnedMeshRendererAuthoring authoring)

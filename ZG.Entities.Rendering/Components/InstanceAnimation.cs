@@ -87,11 +87,36 @@ namespace ZG
 
         public BlobArray<Clip> clips;
         public BlobArray<Renderer> renderers;
+
+        public int IndexOfClip(
+            in FixedString128Bytes clipName, 
+            int clipStartIndex, 
+            int clipCount)
+        {
+            //ref var renderer = ref renderers[rendererIndex];
+            
+            int numClips = math.min(clipStartIndex + clipCount, clips.Length);
+            for (int i = clipStartIndex; i < numClips; ++i)
+            {
+                ref var clip = ref clips[i];
+                if (clip.name == clipName)
+                    return i;
+            }
+
+            return -1;
+        }
     }
     
     public struct InstanceAnimationDefinitionData : IComponentData
     {
+        public int clipStartIndex;
+        public int clipCount;
         public BlobAssetReference<InstanceAnimationDefinition> definition;
+
+        public int IndexOfClip(in FixedString128Bytes clipName)
+        {
+            return definition.Value.IndexOfClip(clipName, clipStartIndex, clipCount);
+        }
     }
     
     public struct InstanceAnimationStatus : IComponentData, IEnableableComponent
