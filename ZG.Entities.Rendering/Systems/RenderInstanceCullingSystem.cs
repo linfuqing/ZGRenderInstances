@@ -66,6 +66,16 @@ namespace ZG
                 entityManager.GetAllUniqueSharedComponents(out constantTypes, Allocator.Persistent);
 
                 int numConstantTypes = constantTypes.Length;
+                for (int i = 0; i < numConstantTypes; ++i)
+                {
+                    if (constantTypes[i].index == TypeIndex.Null)
+                    {
+                        constantTypes.RemoveAtSwapBack(i--);
+
+                        --numConstantTypes;
+                    }
+                }
+                
                 if (constantTypeIndices.IsCreated)
                     constantTypeIndices.Clear();
                 else
@@ -502,8 +512,8 @@ namespace ZG
                 foreach (var constantType in constantTypes)
                 {
                     componentType.TypeIndex = constantType.index;
-                    if(componentType.TypeIndex == TypeIndex.Null)
-                        continue;
+                    //if(componentType.TypeIndex == TypeIndex.Null)
+                    //    continue;
                     
                     this[length++] = systemState.GetDynamicComponentTypeHandle(componentType);
                 }
