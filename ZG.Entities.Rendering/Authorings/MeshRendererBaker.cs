@@ -22,11 +22,17 @@ namespace ZG
         {
             //var entity = baker.GetEntity(authoring, TransformUsageFlags.Renderable);
 
+            var material = renderer.sharedMaterial;
+            
             RenderSharedData renderSharedData;
             renderSharedData.subMeshIndex = subMeshStartIndex;
             renderSharedData.mesh = mesh;
-            renderSharedData.material = renderer.sharedMaterial;
+            renderSharedData.material = material;
             baker.AddSharedComponent(entity, renderSharedData);
+
+            RenderQueue renderQueue;
+            renderQueue.value = (long)material.renderQueue << 32;
+            baker.AddSharedComponent(entity, renderQueue);
 
             var bounds = mesh.GetSubMesh(renderSharedData.subMeshIndex).bounds;
             
@@ -54,9 +60,14 @@ namespace ZG
                     {
                         ++renderSharedData.subMeshIndex;
 
-                        renderSharedData.material = materials[++materialIndex];
+                        material = materials[++materialIndex];
+                        
+                        renderSharedData.material = material;
 
                         baker.AddSharedComponent(entityToRender, renderSharedData);
+
+                        renderQueue.value = (long)material.renderQueue << 32;
+                        baker.AddSharedComponent(entity, renderQueue);
 
                         bounds = mesh.GetSubMesh(renderSharedData.subMeshIndex).bounds;
 

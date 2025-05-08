@@ -233,11 +233,7 @@ namespace ZG
                     constantTypeEntityCount > __constantTypeEntityCount ||
                     ChangeVersionUtility.DidChange(constantTypeVersion, __constantTypeVersion))
                 {
-                    __sharedDataCount = sharedDataCount;
-                    __constantTypeEntityCount = constantTypeEntityCount;
-                    __constantTypeVersion = constantTypeVersion;
-
-                    if (constantTypeEntityCount > __constantTypeEntityCount)
+                    if (sharedDataCount > __sharedDataCount || constantTypeEntityCount > __constantTypeEntityCount)
                     {
                         __computeBufferStrideToIndices.Clear();
 
@@ -269,6 +265,10 @@ namespace ZG
 
                         computeBuffers.Add(computeBuffer);
                     }
+                    
+                    __sharedDataCount = sharedDataCount;
+                    __constantTypeEntityCount = constantTypeEntityCount;
+                    __constantTypeVersion = constantTypeVersion;
                 }
 
                 int numComputeBuffers = computeBuffers.Count;
@@ -586,7 +586,7 @@ namespace ZG
             __localToWorlds.Update(__system);
             __frustumPlanes.Update(__system);
 
-            int sharedDataCount = singleton.sharedDatas.Length;
+            int sharedDataCount = singleton.queues.Length * singleton.sharedDatas.Length;
             DynamicBuffer<RenderConstantBuffer> constantBuffers;
             for (i = 0; i < allCamerasCount; ++i)
             {

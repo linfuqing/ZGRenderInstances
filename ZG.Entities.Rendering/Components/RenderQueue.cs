@@ -2,8 +2,8 @@ using Unity.Entities;
 
 namespace ZG
 {
-    public struct RenderQueue : IComponentData
+    public struct RenderQueue : ISharedComponentData
     {
-        public int value;
+        public long value;
     }
 }

@@ -16,6 +16,8 @@ namespace ZG
     {
         public uint sharedDataVersion;
         public uint constantTypeVersion;
+        public uint queueVersion;
+        public NativeList<RenderQueue> queues;
         public NativeList<RenderSharedData> sharedDatas;
         public NativeList<RenderConstantType> constantTypes;
         public NativeHashMap<RenderConstantType, int> constantTypeIndices;
@@ -23,6 +25,9 @@ namespace ZG
 
         public void Dispose()
         {
+            if (queues.IsCreated)
+                queues.Dispose();
+            
             if (sharedDatas.IsCreated)
                 sharedDatas.Dispose();
             
@@ -38,10 +43,24 @@ namespace ZG
 
         public void Update(ref EntityManager entityManager)
         {
+            uint queueVersion = (uint)entityManager.GetComponentOrderVersion<RenderQueue>();
+            if (ChangeVersionUtility.DidChange(queueVersion, this.queueVersion))
+            {
+                this.queueVersion = queueVersion;
+                
+                if (queues.IsCreated)
+                    queues.Dispose();
+
+                entityManager.GetAllUniqueSharedComponents(out queues, Allocator.Persistent);
+            }
+            
             uint sharedDataVersion = (uint)entityManager.GetComponentOrderVersion<RenderSharedData>();
             if (ChangeVersionUtility.DidChange(sharedDataVersion, this.sharedDataVersion))
             {
                 this.sharedDataVersion = sharedDataVersion;
+
+                if (sharedDatas.IsCreated)
+                    sharedDatas.Dispose();
 
                 entityManager.GetAllUniqueSharedComponents(out sharedDatas, Allocator.Persistent);
 
@@ -555,7 +574,7 @@ namespace ZG
         {
             public int sharedDataIndex;
             public int constantTypeIndex;
-            public int renderQueue;
+            public long renderQueue;
             public float depth;
             public Entity entity;
 
@@ -646,7 +665,7 @@ namespace ZG
             public SharedComponentTypeHandle<RenderConstantType> constantType;
 
             [ReadOnly] 
-            public ComponentTypeHandle<RenderQueue> renderQueueType;
+            public SharedComponentTypeHandle<RenderQueue> renderQueueType;
 
             [ReadOnly] 
             public ComponentTypeHandle<RenderBoundsWorld> boundsWorldType;
@@ -663,12 +682,12 @@ namespace ZG
                 instance.sharedDataIndex = sharedDataIndices[chunk.GetSharedComponent(sharedDataType)];
                 instance.constantTypeIndex = chunk.Has(constantType) ? constantTypeIndices[chunk.GetSharedComponent(constantType)] : -1;
 
+                instance.renderQueue = chunk.Has(renderQueueType) ? chunk.GetSharedComponent(renderQueueType).value : 0L;
                 MinMaxAABB aabb = chunk.GetChunkComponentData(ref boundsWorldChunkType).aabb, worldAABB;
                 RenderFrustumPlanes frustumPlanes;
                 ChunkEntityEnumerator iterator;
                 var entityArray = chunk.GetNativeArray(entityType);
                 var boundsWorld = chunk.GetNativeArray(ref boundsWorldType);
-                var renderQueues = chunk.GetNativeArray(ref renderQueueType);
                 foreach (var cameraEntity in cameraEntities)
                 {
                     if (!this.frustumPlanes.TryGetComponent(cameraEntity, out frustumPlanes))
@@ -686,7 +705,6 @@ namespace ZG
                             frustumPlanes.Intersect(worldAABB.Center, worldAABB.Extents))
                             continue;
 
-                        instance.renderQueue = i < renderQueues.Length ? renderQueues[i].value : 0;
                         instance.depth = frustumPlanes.DepthOf(worldAABB.Center);
                         instance.entity = entityArray[i];
 
@@ -889,7 +907,8 @@ namespace ZG
         private SharedComponentTypeHandle<RenderConstantType> __constantType;
 
         
-        private ComponentTypeHandle<RenderQueue> __renderQueueType;
+        private SharedComponentTypeHandle<RenderQueue> __renderQueueType;
+        
         private ComponentTypeHandle<RenderBounds> __boundsType;
         private ComponentTypeHandle<RenderBoundsWorld> __boundsWorldType;
         private ComponentTypeHandle<RenderBoundsWorldChunk> __boundsWorldChunkType;
@@ -919,8 +938,8 @@ namespace ZG
         {
             __sharedDataType = state.GetSharedComponentTypeHandle<RenderSharedData>();
             __constantType = state.GetSharedComponentTypeHandle<RenderConstantType>();
+            __renderQueueType = state.GetSharedComponentTypeHandle<RenderQueue>();
             
-            __renderQueueType = state.GetComponentTypeHandle<RenderQueue>(true);
             __boundsType = state.GetComponentTypeHandle<RenderBounds>(true);
             
             __boundsWorldType = state.GetComponentTypeHandle<RenderBoundsWorld>();
