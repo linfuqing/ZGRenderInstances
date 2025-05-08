@@ -25,7 +25,7 @@ namespace ZG
                     return false;
 
                 RenderConstantType constantType;
-                constantType.bufferID = Shader.PropertyToID("UnityInstancing_SkinnedInstance");
+                constantType.bufferName = "UnityInstancing_SkinnedInstance";
                 constantType.index = TypeManager.GetTypeIndex<RenderSkinnedData>();
 
                 RenderSkinnedData skinnedData;

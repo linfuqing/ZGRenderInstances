@@ -169,6 +169,7 @@ namespace ZG
         private uint __constantTypeVersion;
         private int __constantTypeEntityCount;
         private int __sharedDataCount;
+        private NativeHashMap<FixedString128Bytes, int> __bufferIDs;
         private NativeHashMap<int, int> __computeBufferStrideToIndices;
         private NativeList<int> __byteOffsets;
 
@@ -191,6 +192,7 @@ namespace ZG
             __sharedDataCount = 0;
             __constantTypeEntityCount = 0;
             __constantTypeVersion = 0;
+            __bufferIDs = new NativeHashMap<FixedString128Bytes, int>(1, allocator);
             __computeBufferStrideToIndices = new NativeHashMap<int, int>(1, allocator);
             __byteOffsets = new NativeList<int>(allocator);
         }
@@ -206,6 +208,7 @@ namespace ZG
 
             ComputeBuffers.Remove(InstanceID);
 
+            __bufferIDs.Dispose();
             __computeBufferStrideToIndices.Dispose();
             __byteOffsets.Dispose();
         }
@@ -343,7 +346,7 @@ namespace ZG
             var computeBuffers = __GetComputeBuffers();
             RenderSharedData sharedData;
             RenderConstantType constantType;
-            int i, count, stride, offset = 0;
+            int i, bufferID, count, stride, offset = 0;
             foreach (var chunk in chunks)
             {
                 for (i = 0; i < chunk.count; i += count)
@@ -353,10 +356,17 @@ namespace ZG
                     if (chunk.constantTypeIndex != -1)
                     {
                         constantType = constantTypes[chunk.constantTypeIndex];
+                        if (!__bufferIDs.TryGetValue(constantType.bufferName, out bufferID))
+                        {
+                            bufferID = Shader.PropertyToID(constantType.bufferName.ToString());
+                            
+                            __bufferIDs[constantType.bufferName] = bufferID;
+                        }
+                        
                         stride = TypeManager.GetTypeInfo(constantType.index).TypeSize;
                         commandBuffer.SetGlobalConstantBuffer(
                             computeBuffers[__computeBufferStrideToIndices[stride]],
-                            constantType.bufferID,
+                            bufferID,
                             chunk.constantByteOffset,
                             chunk.count * stride);
                     }

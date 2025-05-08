@@ -128,7 +128,7 @@ namespace ZG
 
             RenderConstantType constantType;
             constantType.index = TypeManager.GetTypeIndex<SpriteRenderInstanceData>();
-            constantType.bufferID = Shader.PropertyToID("UnityInstancing_SpriteInstance");
+            constantType.bufferName = "UnityInstancing_SpriteInstance";
             AddSharedComponent(entity, constantType);
         }
     }
