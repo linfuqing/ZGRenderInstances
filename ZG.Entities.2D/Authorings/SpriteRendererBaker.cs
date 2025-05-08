@@ -33,7 +33,7 @@ namespace ZG
             AddComponent(entity, renderBounds);
             
             RenderQueue renderQueue;
-            renderQueue.value = (long)authoring.sortingOrder | ((long)material.renderQueue << 32);
+            renderQueue.value = ((long)authoring.sortingOrder + int.MaxValue) | ((long)material.renderQueue << 32);
             AddSharedComponent(entity, renderQueue);
 
             var sprite = authoring.sprite;
