@@ -13,6 +13,9 @@ namespace ZG
         {
             public override void Bake(InstanceAnimationMessageAuthoring authoring)
             {
+                if (authoring.GetComponent<SkinnedMeshRendererAuthoring>() == null)
+                    return;
+                
                 int numMessageClips = authoring._messageClips == null ? 0 : authoring._messageClips.Length;
                 if (numMessageClips < 1)
                     return;
