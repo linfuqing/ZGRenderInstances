@@ -267,12 +267,15 @@ namespace ZG
         
         public void Rebuild(SkinnedMeshRenderer[] skinnedMeshRenderers)
         {
+            __renderIndices = new Dictionary<Hash128, int>();
+
             int textureWidth = 1, 
                 textureHeight = 1, 
                 textureDepth = 1, 
                 totalPixels = 0, 
                 clipStartIndex,
                 frameIndex;
+            Hash128 hash;
             Animator animator;
             Skin skin;
             Clip clip;
@@ -294,6 +297,13 @@ namespace ZG
                 }
 
                 animationClips = animator.runtimeAnimatorController.animationClips;
+                
+                hash = GenerateSkinHash(animationClips, skinnedMeshRenderer, animator.gameObject, _targetFrameRate);
+                if(__renderIndices.ContainsKey(hash))
+                    continue;
+
+                __renderIndices[hash] = __renderIndices.Count;
+                
                 if (!clipStartIndices.TryGetValue(animator, out clipStartIndex))
                 {
                     clipStartIndex = clips.Count;
