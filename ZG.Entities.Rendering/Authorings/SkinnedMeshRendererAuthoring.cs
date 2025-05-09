@@ -59,7 +59,12 @@ namespace ZG
                 return true;
             }
 
-            public static void Bake(IBaker baker, in Entity entity, GameObject gameObject, string defaultClipName)
+            public static void Bake(
+                IBaker baker, 
+                in Entity entity, 
+                GameObject gameObject, 
+                string defaultClipName, 
+                string enterClipName)
             {
                 var skinnedMeshRenderers = gameObject.GetComponentsInChildren<SkinnedMeshRenderer>();
                 int numSkinnedMeshRenderers = skinnedMeshRenderers.Length;
@@ -123,7 +128,11 @@ namespace ZG
                     : definition.IndexOfClip(defaultClipName, animation.clipStartIndex, animation.clipCount);
                 baker.AddComponent(entity, animation);
 
-                if (animation.defaultClipIndex == -1)
+                int enterClipIndex = enterClipName == defaultClipName ? animation.defaultClipIndex : 
+                    string.IsNullOrEmpty(enterClipName)
+                        ? -1
+                        : definition.IndexOfClip(enterClipName, animation.clipStartIndex, animation.clipCount);
+                if (enterClipIndex == -1)
                 {
                     baker.AddComponent<InstanceAnimationStatus>(entity);
                     baker.SetComponentEnabled<InstanceAnimationStatus>(entity, false);
@@ -140,13 +149,20 @@ namespace ZG
             public override void Bake(SkinnedMeshRendererAuthoring authoring)
             {
                 Entity entity = GetEntity(authoring, TransformUsageFlags.Renderable);
-                Bake(this, entity, authoring._prefab, authoring._defaultClipName);
+                Bake(this, 
+                    entity, 
+                    authoring._prefab, 
+                    authoring._defaultClipName, 
+                    authoring._enterClipName);
             }
         }
 
         [SerializeField] 
         internal string _defaultClipName = "Idle";
         
+        [SerializeField] 
+        internal string _enterClipName = "Idle";
+
         [SerializeField]
         internal GameObject _prefab;
     }
