@@ -23,7 +23,7 @@ namespace ZG
                         out var skin,
                         out int rendererIndex))
                 {
-                    Debug.LogError($"Cannot find skinned mesh renderer {skinnedMeshRenderer}.", skinnedMeshRenderer);
+                    Debug.LogError($"Cannot find skinned mesh renderer {skinnedMeshRenderer.name}.", skinnedMeshRenderer);
 
                     return false;
                 }
@@ -66,8 +66,8 @@ namespace ZG
                 string defaultClipName, 
                 string enterClipName)
             {
-                var skinnedMeshRenderers = gameObject.GetComponentsInChildren<SkinnedMeshRenderer>();
-                int numSkinnedMeshRenderers = skinnedMeshRenderers.Length;
+                var skinnedMeshRenderers = gameObject == null ? null : gameObject.GetComponentsInChildren<SkinnedMeshRenderer>();
+                int numSkinnedMeshRenderers = skinnedMeshRenderers == null ? 0 : skinnedMeshRenderers.Length;
                 if (numSkinnedMeshRenderers < 1)
                     return;
 
@@ -148,6 +148,13 @@ namespace ZG
 
             public override void Bake(SkinnedMeshRendererAuthoring authoring)
             {
+                if (authoring._prefab == null)
+                {
+                    Debug.LogError($"{authoring} has no prefab!");
+
+                    return;
+                }
+
                 Entity entity = GetEntity(authoring, TransformUsageFlags.Renderable);
                 Bake(this, 
                     entity, 
