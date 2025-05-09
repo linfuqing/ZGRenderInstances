@@ -114,12 +114,12 @@ namespace ZG
                         animation.clipStartIndex;
                 }
                 
+                animation.defaultClipIndex = string.IsNullOrEmpty(defaultClipName)
+                    ? -1
+                    : definition.IndexOfClip(defaultClipName, animation.clipStartIndex, animation.clipCount);
                 baker.AddComponent(entity, animation);
 
-                int clipIndex = string.IsNullOrEmpty(defaultClipName)
-                    ? -1
-                    : animation.IndexOfClip(defaultClipName);
-                if (clipIndex == -1)
+                if (animation.defaultClipIndex == -1)
                 {
                     baker.AddComponent<InstanceAnimationStatus>(entity);
                     baker.SetComponentEnabled<InstanceAnimationStatus>(entity, false);
@@ -127,7 +127,7 @@ namespace ZG
                 else
                 {
                     InstanceAnimationStatus status;
-                    status.clipIndex = clipIndex;
+                    status.clipIndex = animation.defaultClipIndex;
                     status.time = 0.0f;
                     baker.AddComponent(entity, status);
                 }

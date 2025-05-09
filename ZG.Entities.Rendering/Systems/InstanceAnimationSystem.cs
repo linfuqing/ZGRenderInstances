@@ -26,9 +26,18 @@ namespace ZG
 
             public bool Execute(int index)
             {
+                var definition = definitions[index];
                 var status = states[index];
                 bool isPlaying = status.Evaluate(deltaTime, skinnedMeshRenderers[index].AsNativeArray(),
-                    ref definitions[index].definition.Value, ref skinnedDatas);
+                    ref definition.definition.Value, ref skinnedDatas);
+
+                if (!isPlaying && definition.defaultClipIndex != -1)
+                {
+                    isPlaying = true;
+                    
+                    status.clipIndex = definition.defaultClipIndex;
+                    status.time = 0.0f;
+                }
 
                 states[index] = status;
 

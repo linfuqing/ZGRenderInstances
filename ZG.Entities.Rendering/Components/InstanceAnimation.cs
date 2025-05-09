@@ -109,6 +109,7 @@ namespace ZG
     
     public struct InstanceAnimationDefinitionData : IComponentData
     {
+        public int defaultClipIndex;
         public int clipStartIndex;
         public int clipCount;
         public BlobAssetReference<InstanceAnimationDefinition> definition;
