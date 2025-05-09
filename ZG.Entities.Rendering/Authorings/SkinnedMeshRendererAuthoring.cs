@@ -19,10 +19,14 @@ namespace ZG
                 SkinnedMeshRendererDatabase database,
                 DynamicBuffer<InstanceSkinnedMeshRenderer> instanceSkinnedMeshRenderers)
             {
-                if (!database.GetSkin(skinnedMeshRenderer, 
-                        out var skin, 
+                if (!database.GetSkin(skinnedMeshRenderer,
+                        out var skin,
                         out int rendererIndex))
+                {
+                    Debug.LogError($"Cannot find skinned mesh renderer {skinnedMeshRenderer}.", skinnedMeshRenderer);
+
                     return false;
+                }
 
                 RenderConstantType constantType;
                 constantType.bufferName = "UnityInstancing_SkinnedInstance";

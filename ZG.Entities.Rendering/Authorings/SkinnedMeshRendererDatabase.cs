@@ -252,7 +252,7 @@ namespace ZG
             var span = pixels.AsSpan(0, pixelCount);
             GenerateAnimationTexture(clips, smr, targetObject, targetFrameRate, ref span);
             
-            return Hash128.Compute(pixels);
+            return Hash128.Compute(pixels, 0, pixelCount);
         }
 
         public Hash128 GenerateSkinHash(SkinnedMeshRenderer skinnedMeshRenderer)
