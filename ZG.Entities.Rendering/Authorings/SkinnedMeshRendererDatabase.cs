@@ -239,14 +239,17 @@ namespace ZG
             IEnumerable<AnimationClip> clips,
             SkinnedMeshRenderer smr,
             GameObject targetObject,
-            int targetFrameRate)
+            int targetFrameRate, 
+            ref Color[] pixels)
         {
             int boneLength = smr.bones.Length, pixelCount = BONE_MATRIX_ROW_COUNT * boneLength;
             foreach (var clip in clips)
                 pixelCount += CalculatedTexturePixels(clip.length, boneLength, targetFrameRate);
+
+            if(pixels == null || pixels.Length < pixelCount)
+                Array.Resize(ref pixels, pixelCount);
             
-            var pixels = new Color[pixelCount];
-            var span = pixels.AsSpan();
+            var span = pixels.AsSpan(0, pixelCount);
             GenerateAnimationTexture(clips, smr, targetObject, targetFrameRate, ref span);
             
             return Hash128.Compute(pixels);
@@ -261,8 +264,9 @@ namespace ZG
                 return default;
             }
 
+            Color[] pixels = null;
             return GenerateSkinHash(animator.runtimeAnimatorController.animationClips, skinnedMeshRenderer,
-                animator.gameObject, _targetFrameRate);
+                animator.gameObject, _targetFrameRate, ref pixels);
         }
         
         public void Rebuild(SkinnedMeshRenderer[] skinnedMeshRenderers)
@@ -280,10 +284,12 @@ namespace ZG
             Skin skin;
             Clip clip;
             AnimationClip[] animationClips;
+            Color[] pixelsTemp = null;
             var textureIndices = new List<int>();
             var clips = new List<Clip>();
             var clipStartIndices = new Dictionary<Animator, int>();
-            var skins = new Dictionary<SkinnedMeshRenderer, Skin>();
+            var skinnedMeshRendererHashes = new Dictionary<SkinnedMeshRenderer, Hash128>();
+            var skins = new List<Skin>();
             foreach (var skinnedMeshRenderer in skinnedMeshRenderers)
             {
                 foreach (var material in skinnedMeshRenderer.sharedMaterials)
@@ -298,11 +304,13 @@ namespace ZG
 
                 animationClips = animator.runtimeAnimatorController.animationClips;
                 
-                hash = GenerateSkinHash(animationClips, skinnedMeshRenderer, animator.gameObject, _targetFrameRate);
+                hash = GenerateSkinHash(animationClips, skinnedMeshRenderer, animator.gameObject, _targetFrameRate, ref pixelsTemp);
                 if(__renderIndices.ContainsKey(hash))
                     continue;
 
-                __renderIndices[hash] = __renderIndices.Count;
+                __renderIndices[hash] = skins.Count;
+                
+                skinnedMeshRendererHashes[skinnedMeshRenderer] = hash;
                 
                 if (!clipStartIndices.TryGetValue(animator, out clipStartIndex))
                 {
@@ -337,7 +345,7 @@ namespace ZG
                     ref totalPixels, 
                     textureIndices);
 
-                skins[skinnedMeshRenderer] = skin;
+                skins.Add(skin);
             }
             
             _clips = clips.ToArray();
@@ -360,11 +368,14 @@ namespace ZG
             var pixelColors = new Color[textureDepth][];
             foreach (var skinnedMeshRenderer in skinnedMeshRenderers)
             {
+                if(!skinnedMeshRendererHashes.TryGetValue(skinnedMeshRenderer, out hash))
+                    continue;
+                
                 animator = skinnedMeshRenderer.GetComponentInParent<Animator>(true);
                 if (animator == null)
                     continue;
 
-                skin = skins[skinnedMeshRenderer];
+                skin = skins[__renderIndices[hash]];
 
                 pixels = pixelColors[skin.depthIndex];
                 if (pixels == null)
@@ -385,8 +396,8 @@ namespace ZG
                     ref subPixels);
 
                 ref var renderer = ref _renderers[rendererIndex++];
-                
-                renderer.hash = Hash128.Compute(pixels, skin.pixelIndex, skin.pixelCount);
+
+                renderer.hash = hash;//Hash128.Compute(pixels, skin.pixelIndex, skin.pixelCount);
 
                 renderer.skin = skin;
 
