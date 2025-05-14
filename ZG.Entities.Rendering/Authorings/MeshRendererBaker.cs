@@ -12,6 +12,7 @@ namespace ZG
 {
     public class MeshRendererBaker : Baker<MeshRenderer>
     {
+        
         public static void Bake(
             IBaker baker, 
             in Entity entity, 
@@ -21,6 +22,9 @@ namespace ZG
             System.Action<int, Entity> onInit = null)
         {
             //var entity = baker.GetEntity(authoring, TransformUsageFlags.Renderable);
+            
+            UnityEngine.Assertions.Assert.IsNotNull(renderer, baker.GetName());
+            UnityEngine.Assertions.Assert.IsNotNull(mesh, baker.GetName());
 
             var material = renderer.sharedMaterial;
             
