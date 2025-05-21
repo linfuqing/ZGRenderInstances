@@ -246,6 +246,7 @@ namespace ZG
                         computeBuffers.Clear();
                     }
 
+                    int count;
                     for (i = 0; i < numConstantTypes; ++i)
                     {
                         constantType = constantTypes[i];
@@ -259,9 +260,12 @@ namespace ZG
                         computeBufferIndex = computeBuffers.Count;
                         
                         __computeBufferStrideToIndices[stride] = computeBufferIndex;
+
+                        count = ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride);
+                        Debug.Log($"Create ComputeBuffer(Count: {count}, Stride: {stride})");
                         
                         computeBuffer = new ComputeBuffer(
-                            ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride), 
+                            count, 
                             stride, 
                             ComputeBufferType.Constant,
                             ComputeBufferMode.SubUpdates);
