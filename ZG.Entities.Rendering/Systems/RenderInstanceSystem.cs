@@ -236,7 +236,24 @@ namespace ZG
                     constantTypeEntityCount > __constantTypeEntityCount ||
                     ChangeVersionUtility.DidChange(constantTypeVersion, __constantTypeVersion))
                 {
-                    if (sharedDataCount > __sharedDataCount || constantTypeEntityCount > __constantTypeEntityCount)
+                    bool isClear = false;
+                    if (sharedDataCount > __sharedDataCount)
+                    {
+                        __sharedDataCount = sharedDataCount;
+
+                        isClear = true;
+                    }
+                    
+                    if (constantTypeEntityCount > __constantTypeEntityCount)
+                    {
+                        __constantTypeEntityCount = constantTypeEntityCount;
+
+                        isClear = true;
+                    }
+                    
+                    __constantTypeVersion = constantTypeVersion;
+                    
+                    if (isClear)
                     {
                         __computeBufferStrideToIndices.Clear();
 
@@ -272,10 +289,6 @@ namespace ZG
 
                         computeBuffers.Add(computeBuffer);
                     }
-                    
-                    __sharedDataCount = sharedDataCount;
-                    __constantTypeEntityCount = constantTypeEntityCount;
-                    __constantTypeVersion = constantTypeVersion;
                 }
 
                 int numComputeBuffers = computeBuffers.Count;
