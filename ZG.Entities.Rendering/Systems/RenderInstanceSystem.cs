@@ -236,33 +236,11 @@ namespace ZG
                     constantTypeEntityCount > __constantTypeEntityCount ||
                     ChangeVersionUtility.DidChange(constantTypeVersion, __constantTypeVersion))
                 {
-                    bool isClear = false;
-                    if (sharedDataCount > __sharedDataCount)
-                    {
-                        __sharedDataCount = sharedDataCount;
-
-                        isClear = true;
-                    }
-                    
-                    if (constantTypeEntityCount > __constantTypeEntityCount)
-                    {
-                        __constantTypeEntityCount = constantTypeEntityCount;
-
-                        isClear = true;
-                    }
+                    __sharedDataCount = Mathf.Max(__sharedDataCount, sharedDataCount);
+                    __constantTypeEntityCount = Mathf.Max(__constantTypeEntityCount, constantTypeEntityCount);
                     
                     __constantTypeVersion = constantTypeVersion;
                     
-                    if (isClear)
-                    {
-                        __computeBufferStrideToIndices.Clear();
-
-                        foreach (var temp in computeBuffers)
-                            temp.Dispose();
-                        
-                        computeBuffers.Clear();
-                    }
-
                     int count;
                     for (i = 0; i < numConstantTypes; ++i)
                     {
@@ -271,14 +249,22 @@ namespace ZG
                         if(stride < 1)
                             continue;
 
-                        if (__computeBufferStrideToIndices.ContainsKey(stride))
-                            continue;
-                        
-                        computeBufferIndex = computeBuffers.Count;
-                        
-                        __computeBufferStrideToIndices[stride] = computeBufferIndex;
+                        count = ComputeCount(__sharedDataCount, __constantTypeEntityCount, alignment, stride);
+                        if (__computeBufferStrideToIndices.TryGetValue(stride, out computeBufferIndex))
+                        {
+                            computeBuffer = computeBuffers[computeBufferIndex];
+                            if (computeBuffer.count < count)
+                                computeBuffer.Dispose();
+                            else
+                                continue;
+                        }
+                        else
+                        {
+                            computeBufferIndex = computeBuffers.Count;
 
-                        count = ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride);
+                            __computeBufferStrideToIndices[stride] = computeBufferIndex;
+                        }
+
                         Debug.Log($"Create ComputeBuffer(Count: {count}, Stride: {stride})");
                         
                         computeBuffer = new ComputeBuffer(
@@ -287,7 +273,10 @@ namespace ZG
                             ComputeBufferType.Constant,
                             ComputeBufferMode.SubUpdates);
 
-                        computeBuffers.Add(computeBuffer);
+                        if (computeBufferIndex < computeBuffers.Count)
+                            computeBuffers[computeBufferIndex] = computeBuffer;
+                        else
+                            computeBuffers.Add(computeBuffer);
                     }
                 }
 
