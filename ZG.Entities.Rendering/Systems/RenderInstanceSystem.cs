@@ -161,6 +161,7 @@ namespace ZG
     public struct RenderList : IComponentData
     {
         public const int MAX_INSTANCE_COUNT = 1024;
+        public const int MIN_COMPUTE_BUFFER_COUNT = MAX_INSTANCE_COUNT * 32;
         public static readonly Matrix4x4[] Matrices = new Matrix4x4[MAX_INSTANCE_COUNT];
         public static readonly Dictionary<int, List<ComputeBuffer>> ComputeBuffers = new Dictionary<int, List<ComputeBuffer>>();
 
@@ -172,6 +173,10 @@ namespace ZG
         private NativeHashMap<FixedString128Bytes, int> __bufferIDs;
         private NativeHashMap<int, int> __computeBufferStrideToIndices;
         private NativeList<int> __byteOffsets;
+        
+#if UNITY_WEBGL
+        private NativeList<byte> __bytes;
+#endif
 
         public static int ComputeCount(int sharedDataCount, int constantTypeEntityCount, int alignment, int stride)
         {
@@ -195,6 +200,10 @@ namespace ZG
             __bufferIDs = new NativeHashMap<FixedString128Bytes, int>(1, allocator);
             __computeBufferStrideToIndices = new NativeHashMap<int, int>(1, allocator);
             __byteOffsets = new NativeList<int>(allocator);
+            
+#if UNITY_WEBGL
+            __bytes = new NativeList<byte>(allocator);
+#endif
         }
 
         public void Dispose()
@@ -211,6 +220,10 @@ namespace ZG
             __bufferIDs.Dispose();
             __computeBufferStrideToIndices.Dispose();
             __byteOffsets.Dispose();
+            
+#if UNITY_WEBGL
+            __bytes.Dispose();
+#endif
         }
 
         public void Begin(
@@ -250,6 +263,7 @@ namespace ZG
                             continue;
 
                         count = ComputeCount(__sharedDataCount, __constantTypeEntityCount, alignment, stride);
+                        count = Mathf.Max(count, MIN_COMPUTE_BUFFER_COUNT);
                         if (__computeBufferStrideToIndices.TryGetValue(stride, out computeBufferIndex))
                         {
                             computeBuffer = computeBuffers[computeBufferIndex];
@@ -271,7 +285,12 @@ namespace ZG
                             count, 
                             stride, 
                             ComputeBufferType.Constant,
-                            ComputeBufferMode.SubUpdates);
+#if UNITY_WEBGL
+                            ComputeBufferMode.Dynamic
+#else
+                            ComputeBufferMode.SubUpdates
+#endif
+                            );
 
                         if (computeBufferIndex < computeBuffers.Count)
                             computeBuffers[computeBufferIndex] = computeBuffer;
@@ -284,12 +303,23 @@ namespace ZG
                 constantBuffers.Clear();
                 constantBuffers.Resize(numConstantTypes + numComputeBuffers, NativeArrayOptions.ClearMemory);
 
+                
+#if UNITY_WEBGL
+                __bytes.ResizeUninitialized(0);
+                
+                __byteOffsets.ResizeUninitialized(numComputeBuffers << 1);
+
+                for (i = 0; i < numComputeBuffers; ++i)
+                    __byteOffsets[i + numComputeBuffers] = 0;
+#else
+                __byteOffsets.ResizeUninitialized(numComputeBuffers);
+#endif
                 __byteOffsets.Resize(numComputeBuffers, NativeArrayOptions.UninitializedMemory);
                 for (i = 0; i < numComputeBuffers; ++i)
                     __byteOffsets[i] = -1;
-                
+
                 NativeArray<byte> bytes;
-                int computeBufferOffset;
+                int byteCount, computeBufferOffset;
                 for (i = 0; i < numConstantTypes; ++i)
                 {
                     constantType = constantTypes[i];
@@ -305,15 +335,27 @@ namespace ZG
                     computeBufferOffset = computeBufferIndex + numConstantTypes;
                     if (!constantBuffers[computeBufferOffset].isCreated)
                     {
+                        byteCount = ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride) * stride;
+                        
+#if UNITY_WEBGL
+                        ref var byteOffset = ref __byteOffsets.ElementAt(computeBufferOffset + numComputeBuffers);
+                        byteOffset = __bytes.Length;
+                        
+                        __bytes.ResizeUninitialized(byteOffset + byteCount);
+
+                        bytes = __bytes.AsArray().GetSubArray(byteOffset, byteCount);
+#else 
                         computeBuffer = computeBuffers[computeBufferIndex];
+
                         bytes = computeBuffer.BeginWrite<byte>(
                             0, 
-                            ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride) * stride);
-                        
+                            byteCount);
+#endif
+
                         constantBuffers[computeBufferOffset] = new RenderConstantBuffer(
-                            alignment, 
-                            computeBufferIndex, 
-                            ref __byteOffsets, 
+                            alignment,
+                            computeBufferIndex,
+                            ref __byteOffsets,
                             ref bytes);
                     }
 
@@ -332,8 +374,12 @@ namespace ZG
                 for (int i = 0; i < numComputeBuffers; ++i)
                 {
                     byteOffset = __byteOffsets[i];
-                    if(byteOffset >= 0)
+                    if(byteOffset >= 0)         
+#if UNITY_WEBGL
+                        computeBuffers[i].SetData(__bytes.AsArray().GetSubArray(__byteOffsets[i + numComputeBuffers], byteOffset));
+#else
                         computeBuffers[i].EndWrite<byte>(byteOffset);
+#endif
                 }
             }
             
@@ -649,7 +695,7 @@ namespace ZG
                 End();
             else
                 __renderLists.Update(__system);
-            
+
             __chunks.Update(__system);
             __localToWorlds.Update(__system);
 
