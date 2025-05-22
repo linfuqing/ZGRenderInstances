@@ -28,6 +28,8 @@ namespace ZG
 
             var material = renderer.sharedMaterial;
             
+            material.enableInstancing = true;
+            
             RenderSharedData renderSharedData;
             renderSharedData.subMeshIndex = subMeshStartIndex;
             renderSharedData.mesh = mesh;
