@@ -303,23 +303,41 @@ namespace ZG
                 constantBuffers.Clear();
                 constantBuffers.Resize(numConstantTypes + numComputeBuffers, NativeArrayOptions.ClearMemory);
 
-                
+                int byteCount;
 #if UNITY_WEBGL
-                __bytes.ResizeUninitialized(0);
-                
                 __byteOffsets.ResizeUninitialized(numComputeBuffers << 1);
 
                 for (i = 0; i < numComputeBuffers; ++i)
-                    __byteOffsets[i + numComputeBuffers] = 0;
+                    __byteOffsets[i + numComputeBuffers] = -1;
+
+                byteCount = 0;
+                for (i = 0; i < numConstantTypes; ++i)
+                {
+                    constantType = constantTypes[i];
+                    stride = TypeManager
+                        .GetTypeInfo(TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash)).TypeSize;
+                    if (stride < 1)
+                        continue;
+
+                    computeBufferIndex = __computeBufferStrideToIndices[stride];
+                    ref var byteOffset = ref __byteOffsets.ElementAt(computeBufferIndex + numComputeBuffers);
+                    if (byteOffset < 0)
+                    {
+                        byteOffset = byteCount;
+                        
+                        byteCount += ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride) * stride;
+                    }
+                }
+                
+                __bytes.ResizeUninitialized(byteCount);
 #else
                 __byteOffsets.ResizeUninitialized(numComputeBuffers);
 #endif
-                __byteOffsets.Resize(numComputeBuffers, NativeArrayOptions.UninitializedMemory);
                 for (i = 0; i < numComputeBuffers; ++i)
                     __byteOffsets[i] = -1;
 
+                int computeBufferOffset;
                 NativeArray<byte> bytes;
-                int byteCount, computeBufferOffset;
                 for (i = 0; i < numConstantTypes; ++i)
                 {
                     constantType = constantTypes[i];
@@ -338,12 +356,7 @@ namespace ZG
                         byteCount = ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride) * stride;
                         
 #if UNITY_WEBGL
-                        ref var byteOffset = ref __byteOffsets.ElementAt(computeBufferOffset + numComputeBuffers);
-                        byteOffset = __bytes.Length;
-                        
-                        __bytes.ResizeUninitialized(byteOffset + byteCount);
-
-                        bytes = __bytes.AsArray().GetSubArray(byteOffset, byteCount);
+                        bytes = __bytes.AsArray().GetSubArray(__byteOffsets[computeBufferIndex + numComputeBuffers], byteCount);
 #else 
                         computeBuffer = computeBuffers[computeBufferIndex];
 
