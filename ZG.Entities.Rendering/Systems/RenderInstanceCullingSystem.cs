@@ -966,6 +966,7 @@ namespace ZG
             
             __groupToTransform.AddChangedVersionFilter(ComponentType.ReadOnly<LocalToWorld>());
             __groupToTransform.AddChangedVersionFilter(ComponentType.ReadOnly<RenderBounds>());
+            __groupToTransform.AddOrderVersionFilter();
             
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
                 __groupToCulling = builder
