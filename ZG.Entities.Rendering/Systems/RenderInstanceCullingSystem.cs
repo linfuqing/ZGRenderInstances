@@ -592,7 +592,7 @@ namespace ZG
                 if (result != 0)
                     return result;
 
-                return renderQueue > (int)UnityEngine.Rendering.RenderQueue.GeometryLast
+                return (renderQueue >> 32) > (int)UnityEngine.Rendering.RenderQueue.GeometryLast
                     ? other.depth.CompareTo(depth)
                     : depth.CompareTo(other.depth);
             }
@@ -762,8 +762,7 @@ namespace ZG
                     
                     var constantBuffers = this.constantBuffers[index];
 
-                    int i,
-                        constantByteOffset,
+                    int constantByteOffset,
                         constantTypeStride = 0;
                     RenderLocalToWorld renderLocalToWorld;
                     EntityStorageInfo entityStorageInfo;
@@ -902,6 +901,8 @@ namespace ZG
             }
         }
 
+        public static readonly SharedStatic<bool> WillCurrentFrameRender = SharedStatic<bool>.GetOrCreate<RenderInstanceCullingSystem>();
+        
         private EntityTypeHandle __entityType;
 
         private SharedComponentTypeHandle<RenderSharedData> __sharedDataType;
@@ -995,6 +996,9 @@ namespace ZG
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
+            if (!WillCurrentFrameRender.Data)
+                return;
+            
             __localToWorldType.Update(ref state);
             __boundsType.Update(ref state);
             __boundsWorldType.Update(ref state);

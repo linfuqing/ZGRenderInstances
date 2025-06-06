@@ -583,7 +583,7 @@ namespace ZG
             {
                 for (i = 0; i < allCamerasCount; ++i)
                 {
-                    if (__cameras[i] == cameraObject)
+                    if ((object)__cameras[i] == cameraObject)
                         break;
                 }
 
@@ -764,8 +764,15 @@ namespace ZG
 
         protected override void OnUpdate()
         {
-            int constantTypeEntityCount = __constantTypeGroup.CalculateEntityCount();
-            __manager.Begin(constantTypeEntityCount);
+            bool willCurrentFrameRender = OnDemandRendering.willCurrentFrameRender;
+
+            RenderInstanceCullingSystem.WillCurrentFrameRender.Data = willCurrentFrameRender;
+
+            if (willCurrentFrameRender)
+            {
+                int constantTypeEntityCount = __constantTypeGroup.CalculateEntityCount();
+                __manager.Begin(constantTypeEntityCount);
+            }
         }
     }
 }
