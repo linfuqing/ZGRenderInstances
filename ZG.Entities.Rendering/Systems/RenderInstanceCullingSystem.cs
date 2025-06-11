@@ -709,7 +709,6 @@ namespace ZG
                 result.value = chunk;
                 
                 FixedList128Bytes<byte> depths;
-                byte depth;
                 MinMaxAABB aabb = chunk.GetChunkComponentData(ref boundsWorldChunkType).aabb, worldAABB;
                 RenderFrustumPlanes frustumPlanes;
                 ChunkEntityEnumerator iterator;
@@ -727,6 +726,7 @@ namespace ZG
                     result.entityIndices = new FixedList128Bytes<byte>();
 
                     depths = new FixedList128Bytes<byte>();
+                    depths.Length = chunk.Count;
                     
                     iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
                     while (iterator.NextEntityIndex(out int i))
@@ -736,8 +736,7 @@ namespace ZG
                             frustumPlanes.Intersect(worldAABB.Center, worldAABB.Extents))
                             continue;
 
-                        depth = (byte)(frustumPlanes.DepthOf(worldAABB.Center) * byte.MaxValue);
-                        depths.Add(depth);
+                        depths[i] = (byte)(frustumPlanes.DepthOf(worldAABB.Center) * byte.MaxValue);
 
                         //instance.depth = frustumPlanes.DepthOf(worldAABB.Center);
                         //instance.entity = entityArray[i];
