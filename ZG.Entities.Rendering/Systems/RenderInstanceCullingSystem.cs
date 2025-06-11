@@ -570,15 +570,18 @@ namespace ZG
             }
         }
         
-        private struct Instance : IComparable<Instance>
+        private struct Chunk : IComparable<Chunk>
         {
             public int sharedDataIndex;
             public int constantTypeIndex;
             public long renderQueue;
-            public float depth;
-            public Entity entity;
 
-            public int CompareTo(Instance other)
+            public ArchetypeChunk value;
+            public FixedList128Bytes<byte> entityIndices;
+            //public float depth;
+            //public Entity entity;
+
+            public int CompareTo(Chunk other)
             {
                 int result = renderQueue.CompareTo(other.renderQueue);
                 if (result != 0)
@@ -589,17 +592,17 @@ namespace ZG
                     return result;
                 
                 result = constantTypeIndex.CompareTo(other.constantTypeIndex);
-                if (result != 0)
+                //if (result != 0)
                     return result;
 
-                return (renderQueue >> 32) > (int)UnityEngine.Rendering.RenderQueue.GeometryLast
+                /*return (renderQueue >> 32) > (int)UnityEngine.Rendering.RenderQueue.GeometryLast
                     ? other.depth.CompareTo(depth)
-                    : depth.CompareTo(other.depth);
+                    : depth.CompareTo(other.depth);*/
             }
 
             public override int GetHashCode()
             {
-                return depth.GetHashCode();
+                return value.GetHashCode(); //depth.GetHashCode();
             }
         }
 
@@ -643,6 +646,26 @@ namespace ZG
         [BurstCompile]
         private struct Culling : IJobChunk
         {
+            private struct Less : System.Collections.Generic.IComparer<byte>
+            {
+                public FixedList128Bytes<byte> depths;
+                
+                public int Compare(byte x, byte y)
+                {
+                    return depths[x].CompareTo(depths[y]);
+                }
+            }
+            
+            private struct Greater : System.Collections.Generic.IComparer<byte>
+            {
+                public FixedList128Bytes<byte> depths;
+                
+                public int Compare(byte x, byte y)
+                {
+                    return depths[y].CompareTo(depths[x]);
+                }
+            }
+            
             [ReadOnly] 
             public NativeHashMap<RenderSharedData, int> sharedDataIndices;
 
@@ -655,8 +678,8 @@ namespace ZG
             [ReadOnly] 
             public NativeArray<Entity> cameraEntities;
 
-            [ReadOnly] 
-            public EntityTypeHandle entityType;
+            //[ReadOnly] 
+            //public EntityTypeHandle entityType;
 
             [ReadOnly] 
             public SharedComponentTypeHandle<RenderSharedData> sharedDataType;
@@ -673,20 +696,24 @@ namespace ZG
             [ReadOnly] 
             public ComponentTypeHandle<RenderBoundsWorldChunk> boundsWorldChunkType;
 
-            public NativeParallelMultiHashMap<Entity, Instance>.ParallelWriter instances;
+            public NativeParallelMultiHashMap<Entity, Chunk>.ParallelWriter chunks;
 
             public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask,
                 in v128 chunkEnabledMask)
             {
-                Instance instance;
-                instance.sharedDataIndex = sharedDataIndices[chunk.GetSharedComponent(sharedDataType)];
-                instance.constantTypeIndex = chunk.Has(constantType) ? constantTypeIndices[chunk.GetSharedComponent(constantType)] : -1;
+                Chunk result;
+                result.sharedDataIndex = sharedDataIndices[chunk.GetSharedComponent(sharedDataType)];
+                result.constantTypeIndex = chunk.Has(constantType) ? constantTypeIndices[chunk.GetSharedComponent(constantType)] : -1;
 
-                instance.renderQueue = chunk.Has(renderQueueType) ? chunk.GetSharedComponent(renderQueueType).value : 0L;
+                result.renderQueue = chunk.Has(renderQueueType) ? chunk.GetSharedComponent(renderQueueType).value : 0L;
+                result.value = chunk;
+                
+                FixedList128Bytes<byte> depths;
+                byte depth;
                 MinMaxAABB aabb = chunk.GetChunkComponentData(ref boundsWorldChunkType).aabb, worldAABB;
                 RenderFrustumPlanes frustumPlanes;
                 ChunkEntityEnumerator iterator;
-                var entityArray = chunk.GetNativeArray(entityType);
+                //var entityArray = chunk.GetNativeArray(entityType);
                 var boundsWorld = chunk.GetNativeArray(ref boundsWorldType);
                 foreach (var cameraEntity in cameraEntities)
                 {
@@ -697,6 +724,10 @@ namespace ZG
                         frustumPlanes.Intersect(aabb.Center, aabb.Extents))
                         continue;
 
+                    result.entityIndices = new FixedList128Bytes<byte>();
+
+                    depths = new FixedList128Bytes<byte>();
+                    
                     iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
                     while (iterator.NextEntityIndex(out int i))
                     {
@@ -705,11 +736,28 @@ namespace ZG
                             frustumPlanes.Intersect(worldAABB.Center, worldAABB.Extents))
                             continue;
 
-                        instance.depth = frustumPlanes.DepthOf(worldAABB.Center);
-                        instance.entity = entityArray[i];
+                        depth = (byte)(frustumPlanes.DepthOf(worldAABB.Center) * byte.MaxValue);
+                        depths.Add(depth);
 
-                        instances.Add(cameraEntity, instance);
+                        //instance.depth = frustumPlanes.DepthOf(worldAABB.Center);
+                        //instance.entity = entityArray[i];
+                        result.entityIndices.Add((byte)i);
                     }
+
+                    if ((result.renderQueue >> 32) > (int)UnityEngine.Rendering.RenderQueue.GeometryLast)
+                    {
+                        Greater greater;
+                        greater.depths = depths;
+                        result.entityIndices.Sort(greater);
+                    }
+                    else
+                    {
+                        Less less;
+                        less.depths = depths;
+                        result.entityIndices.Sort(less);
+                    }
+
+                    chunks.Add(cameraEntity, result);
                 }
             }
         }
@@ -718,16 +766,16 @@ namespace ZG
         {
             public ConstantTypeArray constantTypeArray;
             
-            public EntityStorageInfoLookup entityStorageInfos;
+            //public EntityStorageInfoLookup entityStorageInfos;
             
             [ReadOnly] 
             public NativeArray<RenderConstantType> constantTypes;
 
             [ReadOnly]
-            public NativeParallelMultiHashMap<Entity, Instance> instances;
+            public NativeParallelMultiHashMap<Entity, Chunk> chunks;
             
             [ReadOnly]
-            public ComponentLookup<LocalToWorld> localToWorlds;
+            public ComponentTypeHandle<LocalToWorld> localToWorldType;
 
             [ReadOnly] 
             public NativeArray<Entity> entityArray;
@@ -738,15 +786,15 @@ namespace ZG
 
             public void Execute(int index)
             {
-                if (this.instances.TryGetFirstValue(entityArray[index], out var instance, out var iterator))
+                if (this.chunks.TryGetFirstValue(entityArray[index], out var instance, out var iterator))
                 {
-                    var instances = new NativeList<Instance>(Allocator.Temp);
+                    var chunks = new NativeList<Chunk>(Allocator.Temp);
                     do
                     {
-                        instances.Add(instance);
-                    } while (this.instances.TryGetNextValue(out instance, ref iterator));
+                        chunks.Add(instance);
+                    } while (this.chunks.TryGetNextValue(out instance, ref iterator));
                     
-                    instances.AsArray().Sort();
+                    chunks.AsArray().Sort();
                     
                     var renderLocalToWorlds = this.renderLocalToWorlds[index];
                     renderLocalToWorlds.Clear();
@@ -764,14 +812,14 @@ namespace ZG
 
                     int constantByteOffset,
                         constantTypeStride = 0;
-                    RenderLocalToWorld renderLocalToWorld;
-                    EntityStorageInfo entityStorageInfo;
+                    //EntityStorageInfo entityStorageInfo;
                     DynamicComponentTypeHandle constantType = default;
+                    NativeArray<RenderLocalToWorld> localToWorlds;
                     NativeArray<byte> bytes;
                     NativeList<byte> caches = default;
-                    foreach (var temp in instances)
+                    foreach (var chunk in chunks)
                     {
-                        if (renderChunk.sharedDataIndex != temp.sharedDataIndex)
+                        if (renderChunk.sharedDataIndex != chunk.sharedDataIndex)
                         {
                             if (caches.IsEmpty)
                                 renderChunk.constantByteOffset = 0;
@@ -784,14 +832,16 @@ namespace ZG
 
                             if(renderChunk.count > 0)
                                 renderChunks.Add(renderChunk);
+                            else
+                                UnityEngine.Assertions.Assert.AreEqual(0, renderChunk.constantByteOffset);
                             
                             renderChunk.count = 0;
                             
-                            renderChunk.sharedDataIndex = temp.sharedDataIndex;
+                            renderChunk.sharedDataIndex = chunk.sharedDataIndex;
                         }
 
-                        entityStorageInfo = entityStorageInfos[temp.entity];
-                        if (temp.constantTypeIndex != renderChunk.constantTypeIndex)
+                        //entityStorageInfo = entityStorageInfos[chunk.entity];
+                        if (chunk.constantTypeIndex != renderChunk.constantTypeIndex)
                         {
                             if (caches.IsEmpty)
                                 renderChunk.constantByteOffset = 0;
@@ -802,43 +852,49 @@ namespace ZG
                                 caches.Clear();
                             }
 
-                            if(renderChunk.count > 0)
+                            if (renderChunk.count > 0)
                                 renderChunks.Add(renderChunk);
+                            else
+                                UnityEngine.Assertions.Assert.AreEqual(0, renderChunk.constantByteOffset);
                             
                             renderChunk.count = 0;
 
-                            renderChunk.constantTypeIndex = temp.constantTypeIndex;
+                            renderChunk.constantTypeIndex = chunk.constantTypeIndex;
 
-                            if (temp.constantTypeIndex != -1)
+                            if (chunk.constantTypeIndex != -1)
                             {
-                                constantType = constantTypeArray[temp.constantTypeIndex];
+                                constantType = constantTypeArray[chunk.constantTypeIndex];
 
                                 constantTypeStride = TypeManager
                                     .GetTypeInfo(
-                                        TypeManager.GetTypeIndexFromStableTypeHash(constantTypes[temp.constantTypeIndex]
+                                        TypeManager.GetTypeIndexFromStableTypeHash(constantTypes[chunk.constantTypeIndex]
                                             .stableTypeHash))
                                     .TypeSize;
                             }
                         }
                         
-                        if (temp.constantTypeIndex != -1)
+                        if (chunk.constantTypeIndex != -1)
                         {
-                            bytes = entityStorageInfo.Chunk.GetDynamicComponentDataArrayReinterpret<byte>(
+                            bytes = chunk.value.GetDynamicComponentDataArrayReinterpret<byte>(
                                 ref constantType, 
                                 constantTypeStride);
                             
-                            constantByteOffset = entityStorageInfo.IndexInChunk * constantTypeStride;
-                            
                             if(!caches.IsCreated)
                                 caches = new NativeList<byte>(Allocator.Temp);
+
+                            foreach (var entityIndex in chunk.entityIndices)
+                            {
+                                constantByteOffset = entityIndex * constantTypeStride;
                             
-                            caches.AddRange(bytes.GetSubArray(constantByteOffset, constantTypeStride));
+                                caches.AddRange(bytes.GetSubArray(constantByteOffset, constantTypeStride));
+                            }
                         }
 
-                        renderLocalToWorld.value = localToWorlds[temp.entity].Value;
-                        renderLocalToWorlds.Add(renderLocalToWorld);
+                        localToWorlds = chunk.value.GetNativeArray(ref localToWorldType).Reinterpret<RenderLocalToWorld>();
+                        foreach (var entityIndex in chunk.entityIndices)
+                            renderLocalToWorlds.Add(localToWorlds[entityIndex]);
                         
-                        ++renderChunk.count;
+                        renderChunk.count += chunk.entityIndices.Length;
                     }
                     
                     if (caches.IsEmpty)
@@ -848,11 +904,13 @@ namespace ZG
 
                     if(renderChunk.count > 0)
                         renderChunks.Add(renderChunk);
+                    else
+                        UnityEngine.Assertions.Assert.AreEqual(0, renderChunk.constantByteOffset);
 
                     if (caches.IsCreated)
                         caches.Dispose();
 
-                    instances.Dispose();
+                    chunks.Dispose();
                 }
             }
         }
@@ -862,17 +920,15 @@ namespace ZG
         {
             public ConstantTypeArray constantTypeArray;
             
-            public EntityStorageInfoLookup entityStorageInfos;
-            
             [ReadOnly] 
             public NativeArray<RenderConstantType> constantTypes;
 
             [ReadOnly]
-            public NativeParallelMultiHashMap<Entity, Instance> instances;
+            public NativeParallelMultiHashMap<Entity, Chunk> chunks;
             
             [ReadOnly]
-            public ComponentLookup<LocalToWorld> localToWorlds;
-            
+            public ComponentTypeHandle<LocalToWorld> localToWorldType;
+
             [ReadOnly] 
             public EntityTypeHandle entityType;
             
@@ -887,9 +943,8 @@ namespace ZG
                 Command command;
                 command.constantTypes = constantTypes;
                 command.constantTypeArray = constantTypeArray;
-                command.entityStorageInfos = entityStorageInfos;
-                command.instances = instances;
-                command.localToWorlds = localToWorlds;
+                command.chunks = chunks;
+                command.localToWorldType = localToWorldType;
                 command.entityArray = chunk.GetNativeArray(entityType);
                 command.constantBuffers = chunk.GetBufferAccessor(ref constantBufferType);
                 command.renderChunks = chunk.GetBufferAccessor(ref renderChunkType);
@@ -918,7 +973,6 @@ namespace ZG
 
         private ComponentTypeHandle<LocalToWorld> __localToWorldType;
 
-        private ComponentLookup<LocalToWorld> __localToWorlds;
         private ComponentLookup<RenderFrustumPlanes> __frustumPlanes;
 
         private BufferTypeHandle<RenderConstantBuffer> __constantBufferType;
@@ -926,15 +980,13 @@ namespace ZG
         private BufferTypeHandle<RenderChunk> __renderChunkType;
         private BufferTypeHandle<RenderLocalToWorld> __renderLocalToWorldType;
         
-        private EntityStorageInfoLookup __entityStorageInfos;
-        
         private EntityQuery __groupToTransform;
         private EntityQuery __groupToCulling;
         private EntityQuery __groupToCommand;
 
         private ConstantTypeArray __constantTypeArray;
 
-        private NativeParallelMultiHashMap<Entity, Instance> __instances;
+        private NativeParallelMultiHashMap<Entity, Chunk> __chunks;
 
         [BurstCompile]
         public void OnCreate(ref SystemState state)
@@ -949,15 +1001,12 @@ namespace ZG
             __boundsWorldChunkType = state.GetComponentTypeHandle<RenderBoundsWorldChunk>();
             
             __localToWorldType = state.GetComponentTypeHandle<LocalToWorld>(true);
-            __localToWorlds = state.GetComponentLookup<LocalToWorld>(true);
             __frustumPlanes = state.GetComponentLookup<RenderFrustumPlanes>(true);
             
             __constantBufferType = state.GetBufferTypeHandle<RenderConstantBuffer>();
             __renderChunkType = state.GetBufferTypeHandle<RenderChunk>();
             __renderLocalToWorldType = state.GetBufferTypeHandle<RenderLocalToWorld>();
 
-            __entityStorageInfos = state.GetEntityStorageInfoLookup();
-            
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
                 __groupToTransform = builder
                     .WithAll<LocalToWorld, RenderBounds>()
@@ -984,13 +1033,13 @@ namespace ZG
             
             state.RequireForUpdate<RenderSingleton>();
 
-            __instances = new NativeParallelMultiHashMap<Entity, Instance>(1, Allocator.Persistent);
+            __chunks = new NativeParallelMultiHashMap<Entity, Chunk>(1, Allocator.Persistent);
         }
 
         [BurstCompile]
         public void OnDestroy(ref SystemState state)
         {
-            __instances.Dispose();
+            __chunks.Dispose();
         }
 
         [BurstCompile]
@@ -1011,16 +1060,15 @@ namespace ZG
             transform.boundsWorldChunkType = __boundsWorldChunkType;
             var jobHandle = transform.ScheduleParallelByRef(__groupToTransform, state.Dependency);
             
-            __entityType.Update(ref state);
             __frustumPlanes.Update(ref state);
             __sharedDataType.Update(ref state);
             __constantType.Update(ref state);
             __renderQueueType.Update(ref state);
             
-            __instances.Clear();
-            __instances.Capacity = math.max(
-                __instances.Capacity, 
-                __groupToCulling.CalculateEntityCount() * __groupToCommand.CalculateEntityCount());
+            __chunks.Clear();
+            __chunks.Capacity = math.max(
+                __chunks.Capacity, 
+                __groupToCulling.CalculateChunkCount() * __groupToCommand.CalculateEntityCount());
 
             var singleton = SystemAPI.GetSingleton<RenderSingleton>();
 
@@ -1031,29 +1079,26 @@ namespace ZG
             culling.cameraEntities =
                 __groupToCommand.ToEntityListAsync(state.WorldUpdateAllocator, out var commandEntitiesJobHandle)
                     .AsDeferredJobArray();
-            culling.entityType = __entityType;
             culling.sharedDataType = __sharedDataType;
             culling.constantType = __constantType;
             culling.renderQueueType = __renderQueueType;
             culling.boundsWorldType = __boundsWorldType;
             culling.boundsWorldChunkType = __boundsWorldChunkType;
-            culling.instances = __instances.AsParallelWriter();
+            culling.chunks = __chunks.AsParallelWriter();
             jobHandle = culling.ScheduleParallelByRef(__groupToCulling,
                 JobHandle.CombineDependencies(commandEntitiesJobHandle, jobHandle));
 
+            __entityType.Update(ref state);
             __constantTypeArray.Update(singleton, ref state);
-            __entityStorageInfos.Update(ref state);
-            __localToWorlds.Update(ref state);
             __constantBufferType.Update(ref state);
             __renderChunkType.Update(ref state);
             __renderLocalToWorldType.Update(ref state);
             
             CommandEx command;
             command.constantTypeArray = __constantTypeArray;
-            command.entityStorageInfos = __entityStorageInfos;
             command.constantTypes = singleton.constantTypes.AsArray();
-            command.instances = __instances;
-            command.localToWorlds = __localToWorlds;
+            command.chunks = __chunks;
+            command.localToWorldType = __localToWorldType;
             command.entityType = __entityType;
             command.constantBufferType = __constantBufferType;
             command.renderChunkType = __renderChunkType;

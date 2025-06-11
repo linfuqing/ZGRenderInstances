@@ -180,7 +180,8 @@ namespace ZG
 
         public static int ComputeCount(int sharedDataCount, int constantTypeEntityCount, int alignment, int stride)
         {
-            return math.max(constantTypeEntityCount, (alignment + stride - 1) / stride) * sharedDataCount;
+            return constantTypeEntityCount + (sharedDataCount * alignment + stride - 1) / stride;
+            //return math.max(constantTypeEntityCount, (alignment + stride - 1) / stride) * sharedDataCount;
         }
 
         public RenderList(int instanceID, in AllocatorManager.AllocatorHandle allocator)
@@ -685,13 +686,15 @@ namespace ZG
         public void End()
         {
             UnityEngine.Assertions.Assert.IsTrue(isBegin);
-
-            isBegin = false;
+            
+            __system.EntityManager.CompleteDependencyBeforeRW<RenderConstantBuffer>();
 
             __renderLists.Update(__system);
 
             foreach (var cameraEntity in __cameraEntities.Values)
                 __renderLists.GetRefRW(cameraEntity).ValueRW.End();
+            
+            isBegin = false;
         }
 
         public bool Apply(Camera camera, CommandBuffer commandBuffer)
@@ -764,7 +767,7 @@ namespace ZG
 
         protected override void OnUpdate()
         {
-            bool willCurrentFrameRender = OnDemandRendering.willCurrentFrameRender;
+            bool willCurrentFrameRender = true;//OnDemandRendering.willCurrentFrameRender;
 
             RenderInstanceCullingSystem.WillCurrentFrameRender.Data = willCurrentFrameRender;
 
