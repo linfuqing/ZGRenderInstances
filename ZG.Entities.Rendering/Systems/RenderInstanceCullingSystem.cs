@@ -683,9 +683,9 @@ namespace ZG
             {
                 public float depth;
                 
-                public int index;
+                public int entityIndex;
 
-                public ArchetypeChunk chunk;
+                public int chunkIndex;
 
                 public int CompareTo(Entry other)
                 {
@@ -743,25 +743,39 @@ namespace ZG
                 result.value = chunk;
                 
                 RenderFrustumPlanes frustumPlanes;
-                FixedList128Bytes<byte> depths;
-                NativeArray<RenderBoundsWorld> boundsWorld;
                 NativeList<Entry> entries = default;
                 var chunkHeaders = chunk.GetNativeArray(ref chunkHeaderType);
+                var boundsWorldChunks = chunk.GetNativeArray(ref boundsWorldChunkType);
+                var cullingLists = chunk.GetNativeArray(ref cullingListType);
                 foreach (var cameraEntity in cameraEntities)
                 {
                     if (!this.frustumPlanes.TryGetComponent(cameraEntity, out frustumPlanes))
                         continue;
 
                     if ((result.renderQueue >> 32) > (int)UnityEngine.Rendering.RenderQueue.GeometryLast)
-                        result.count = __CullingWithSort(false, chunkHeaders, frustumPlanes, ref entries);
+                        result.count = __CullingWithSort(
+                            false, 
+                            frustumPlanes, 
+                            chunkHeaders, 
+                            boundsWorldChunks, 
+                            ref cullingLists, 
+                            ref entries);
                     else
-                        result.count = __CullingWithoutSort(chunkHeaders, frustumPlanes);
+                        result.count = __CullingWithoutSort(
+                            frustumPlanes, 
+                            chunkHeaders, 
+                            boundsWorldChunks, 
+                            ref cullingLists);
 
                     chunks.Add(cameraEntity, result);
                 }
             }
 
-            private int __CullingWithoutSort(in NativeArray<ChunkHeader> chunkHeaders, in RenderFrustumPlanes frustumPlanes)
+            private int __CullingWithoutSort(
+                in RenderFrustumPlanes frustumPlanes, 
+                in NativeArray<ChunkHeader> chunkHeaders, 
+                in NativeArray<RenderBoundsWorldChunk> boundsWorldChunks,
+                ref NativeArray<RenderCullingList> cullingLists)
             {
                 RenderCullingList cullingList;
                 NativeArray<RenderBoundsWorld> boundsWorld;
@@ -773,7 +787,7 @@ namespace ZG
                     cullingList = default;
 
                     chunkHeader = chunkHeaders[i];
-                    aabb = chunkHeader.ArchetypeChunk.GetChunkComponentData(ref boundsWorldChunkType).aabb;
+                    aabb = boundsWorldChunks[i].aabb;
                     if (RenderFrustumPlanes.IntersectResult.Out !=
                         frustumPlanes.Intersect(aabb.Center, aabb.Extents))
                     {
@@ -791,7 +805,7 @@ namespace ZG
                         }
                     }
 
-                    chunkHeader.ArchetypeChunk.SetChunkComponentData(ref cullingListType, cullingList);
+                    cullingLists[i] = cullingList;
                 }
 
                 return renderIndex;
@@ -799,8 +813,10 @@ namespace ZG
 
             private int __CullingWithSort(
                 bool isLess, 
-                in NativeArray<ChunkHeader> chunkHeaders,
                 in RenderFrustumPlanes frustumPlanes, 
+                in NativeArray<ChunkHeader> chunkHeaders,
+                in NativeArray<RenderBoundsWorldChunk> boundsWorldChunks,
+                ref NativeArray<RenderCullingList> cullingLists,
                 ref NativeList<Entry> entries)
             {
                 NativeArray<RenderBoundsWorld> boundsWorld;
@@ -811,14 +827,14 @@ namespace ZG
                 for(i = 0; i < numChunkHeaders; ++i)
                 {
                     chunkHeader = chunkHeaders[i];
-                    chunkHeader.ArchetypeChunk.SetChunkComponentData(ref cullingListType, default);
+                    cullingLists[i] = default;
                     
-                    aabb = chunkHeader.ArchetypeChunk.GetChunkComponentData(ref boundsWorldChunkType).aabb;
+                    aabb = boundsWorldChunks[i].aabb;
                     if (RenderFrustumPlanes.IntersectResult.Out ==
                         frustumPlanes.Intersect(aabb.Center, aabb.Extents))
                         continue;
 
-                    entry.chunk = chunkHeader.ArchetypeChunk;
+                    entry.chunkIndex = i;
 
                     boundsWorld = chunkHeader.ArchetypeChunk.GetNativeArray(ref boundsWorldType);
 
@@ -830,7 +846,7 @@ namespace ZG
                             frustumPlanes.Intersect(worldAABB.Center, worldAABB.Extents))
                             continue;
 
-                        entry.index = j;
+                        entry.entityIndex = j;
 
                         entry.depth = frustumPlanes.DepthOf(worldAABB.Center);
 
@@ -846,22 +862,22 @@ namespace ZG
                 {
                     entries.Sort();
 
-                    ArchetypeChunk chunk = default;
+                    int chunkIndex = -1;
                     RenderCullingList cullingList = default;
                     if (isLess)
                     {
                         foreach (var temp in entries)
                         {
-                            if (temp.chunk != chunk)
+                            if (temp.chunkIndex != chunkIndex)
                             {
-                                chunk.SetChunkComponentData(ref cullingListType, cullingList);
+                                cullingLists[chunkIndex] = cullingList;
                                 
-                                chunk = temp.chunk;
+                                chunkIndex = temp.chunkIndex;
                                 
-                                cullingList = chunk.GetChunkComponentData(ref cullingListType);
+                                cullingList = cullingLists[chunkIndex];
                             }
 
-                            cullingList.Add(temp.index, renderIndex++);
+                            cullingList.Add(temp.entityIndex, renderIndex++);
                         }
                     }
                     else
@@ -870,20 +886,20 @@ namespace ZG
                         for(i = length - 1; i >= 0; --i)
                         {
                             entry = entries[i];
-                            if (entry.chunk != chunk)
+                            if (entry.chunkIndex != chunkIndex)
                             {
-                                chunk.SetChunkComponentData(ref cullingListType, cullingList);
+                                cullingLists[chunkIndex] = cullingList;
                                 
-                                chunk = entry.chunk;
+                                chunkIndex = entry.chunkIndex;
                                 
-                                cullingList = chunk.GetChunkComponentData(ref cullingListType);
+                                cullingList = cullingLists[chunkIndex];
                             }
 
-                            cullingList.Add(entry.index, renderIndex++);
+                            cullingList.Add(entry.entityIndex, renderIndex++);
                         }
                     }
                     
-                    chunk.SetChunkComponentData(ref cullingListType, cullingList);
+                    cullingLists[chunkIndex] = cullingList;
                     
                     entries.Clear();
                 }
@@ -1198,8 +1214,8 @@ namespace ZG
             
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
                 __groupToCulling = builder
-                    .WithAll<RenderSharedData, RenderBoundsWorld, ChunkHeader>()
-                    .WithAllChunkComponent<RenderBoundsWorldChunk>()
+                    .WithAll<RenderBoundsWorldChunk, ChunkHeader>()
+                    .WithAllRW<RenderCullingList>()
                     .Build(ref state);
             
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
