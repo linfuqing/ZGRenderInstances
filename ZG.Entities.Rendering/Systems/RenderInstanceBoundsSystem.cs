@@ -20,7 +20,6 @@ namespace ZG
     {
         private EntityQuery __groupToCreateWorld;
         private EntityQuery __groupToCreateChunk;
-        private EntityQuery __groupToCreateCullingList;
 
         [BurstCompile]
         public void OnCreate(ref SystemState state)
@@ -36,12 +35,6 @@ namespace ZG
                     .WithAll<RenderBoundsWorld>()
                     .WithNoneChunkComponent<RenderBoundsWorldChunk>()
                     .Build(ref state);
-            
-            using (var builder = new EntityQueryBuilder(Allocator.Temp))
-                __groupToCreateCullingList = builder
-                    .WithAll<RenderSharedData, RenderBounds>()
-                    .WithNoneChunkComponent<RenderCullingList>()
-                    .Build(ref state);
         }
 
         [BurstCompile]
@@ -52,7 +45,6 @@ namespace ZG
             var entityManager = state.EntityManager;
             entityManager.AddComponent<RenderBoundsWorld>(__groupToCreateWorld);
             entityManager.AddComponent(__groupToCreateChunk, ComponentType.ChunkComponent<RenderBoundsWorldChunk>());
-            entityManager.AddComponent(__groupToCreateCullingList, ComponentType.ChunkComponent<RenderCullingList>());
         }
     }
 }
