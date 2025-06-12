@@ -1048,7 +1048,7 @@ namespace ZG
                     
                     var constantBuffers = this.constantBuffers[index];
 
-                    int i, length, offset,  
+                    int i, length, localToWorldsOffset = 0,  
                         constantByteOffset,
                         constantTypeStride = 0, 
                         cameraBatchChunkIndex = -1;
@@ -1080,6 +1080,9 @@ namespace ZG
                             
                             cameraBatchChunk = cameraBatchChunks[renderList.cameraBatchChunkIndex];
                             
+                            localToWorldsOffset = renderLocalToWorlds.Length;
+                            renderLocalToWorlds.ResizeUninitialized(localToWorldsOffset + cameraBatchChunk.count);
+
                             renderChunk.sharedDataIndex = cameraBatchChunk.value.value.sharedDataIndex;
                             renderChunk.constantTypeIndex = cameraBatchChunk.value.value.constantTypeIndex;
                             if (renderChunk.constantTypeIndex != -1)
@@ -1122,14 +1125,11 @@ namespace ZG
                         localToWorlds = renderList.value.Chunk.GetNativeArray(ref localToWorldType)
                             .Reinterpret<RenderLocalToWorld>();
                         
-                        offset = renderLocalToWorlds.Length;
-                        renderLocalToWorlds.ResizeUninitialized(offset + length);
-
                         for(i = 0; i < length; ++i)
                         {
                             value = renderList.value[i];
                             
-                            renderLocalToWorlds[value.renderIndex + offset] = localToWorlds[value.entityIndex];
+                            renderLocalToWorlds[value.renderIndex + localToWorldsOffset] = localToWorlds[value.entityIndex];
                         }
                         
                         renderChunk.count += length;
