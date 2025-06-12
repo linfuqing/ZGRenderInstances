@@ -614,6 +614,23 @@ namespace ZG
             }
         }
 
+        private struct CameraBatchChunk : IEquatable<CameraBatchChunk>
+        {
+            public CameraBatch value;
+
+            public int count;
+            
+            public bool Equals(CameraBatchChunk other)
+            {
+                return value.Equals(other.value);
+            }
+
+            public override int GetHashCode()
+            {
+                return value.GetHashCode();
+            }
+        }
+
         private struct RenderList
         {
             public struct Value
@@ -656,22 +673,11 @@ namespace ZG
             }
         }
 
-        private struct CameraRenderList : IComparable<CameraRenderList>
+        private struct CameraRenderList
         {
             public RenderList value;
 
-            public Batch batch;
-            
-            
-            public int CompareTo(CameraRenderList other)
-            {
-                return batch.CompareTo(other.batch);
-            }
-
-            public override int GetHashCode()
-            {
-                return batch.GetHashCode();
-            }
+            public int cameraBatchChunkIndex;
         }
         
         [BurstCompile]
@@ -773,18 +779,23 @@ namespace ZG
             [ReadOnly] 
             public NativeParallelMultiHashMap<CameraBatch, ArchetypeChunk> chunks;
             
-            public NativeList<CameraBatch> cameraBatches;
+            public NativeList<CameraBatchChunk> cameraBatchChunks;
 
             public void Execute()
             {
-                cameraBatches.Clear();
+                cameraBatchChunks.Clear();
 
+                CameraBatchChunk cameraBatchChunk;
+                cameraBatchChunk.count = 0;
                 foreach (var pair in chunks)
-                    cameraBatches.Add(pair.Key);
+                {
+                    cameraBatchChunk.value = pair.Key;
+                    cameraBatchChunks.Add(cameraBatchChunk);
+                }
 
-                int count = cameraBatches.AsArray().Unique();
+                int count = cameraBatchChunks.AsArray().Unique();
                 
-                cameraBatches.ResizeUninitialized(count);
+                cameraBatchChunks.ResizeUninitialized(count);
             }
         }
 
@@ -809,8 +820,7 @@ namespace ZG
                 }
             }
             
-            [ReadOnly]
-            public NativeArray<CameraBatch> cameraBatches;
+            public NativeArray<CameraBatchChunk> cameraBatchChunks;
 
             [ReadOnly] 
             public ComponentLookup<RenderFrustumPlanes> frustumPlanes;
@@ -825,14 +835,16 @@ namespace ZG
 
             public void Execute(int index)
             {
-                var cameraBatch = cameraBatches[index];
-                if ((cameraBatch.value.renderQueue >> 32) > (int)UnityEngine.Rendering.RenderQueue.GeometryLast)
-                    __CullingWithSort(false, cameraBatch);
+                var cameraBatchChunk = cameraBatchChunks[index];
+                if ((cameraBatchChunk.value.value.renderQueue >> 32) > (int)UnityEngine.Rendering.RenderQueue.GeometryLast)
+                    cameraBatchChunk.count = __CullingWithSort(false, index, cameraBatchChunk.value);
                 else
-                    __CullingWithoutSort(cameraBatch);
+                    cameraBatchChunk.count = __CullingWithoutSort(index, cameraBatchChunk.value);
+
+                cameraBatchChunks[index] = cameraBatchChunk;
             }
 
-            private int __CullingWithoutSort(in CameraBatch cameraBatch)
+            private int __CullingWithoutSort(int cameraBatchChunkIndex, in CameraBatch cameraBatch)
             {
                 NativeArray<RenderBoundsWorld> boundsWorld;
                 MinMaxAABB worldAABB;
@@ -843,7 +855,7 @@ namespace ZG
                         return 0;
 
                     CameraRenderList renderList;
-                    renderList.batch = cameraBatch.value;
+                    renderList.cameraBatchChunkIndex = cameraBatchChunkIndex;
                     do
                     {
                         renderList.value = new RenderList(chunk);
@@ -870,6 +882,7 @@ namespace ZG
             
             private int __CullingWithSort(
                 bool isLess, 
+                int cameraBatchChunkIndex, 
                 in CameraBatch cameraBatch)
             {
                 if (chunks.TryGetFirstValue(cameraBatch, out var chunk, out var iterator))
@@ -954,7 +967,7 @@ namespace ZG
                         if(renderList.value.length > 0)
                             renderLists[renderList.value.Chunk] = renderList.value;
 
-                        renderList.batch = cameraBatch.value;
+                        renderList.cameraBatchChunkIndex = cameraBatchChunkIndex;
                         foreach (var pair in renderLists)
                         {
                             renderList.value = pair.Value;
@@ -975,10 +988,24 @@ namespace ZG
 
         private struct Command
         {
+            private struct Comparer : System.Collections.Generic.IComparer<CameraRenderList>
+            {
+                public NativeArray<CameraBatchChunk> cameraBatchChunks;
+
+                public int Compare(CameraRenderList x, CameraRenderList y)
+                {
+                    return cameraBatchChunks[x.cameraBatchChunkIndex].value.value
+                        .CompareTo(cameraBatchChunks[y.cameraBatchChunkIndex].value.value);
+                }
+            }
+            
             public ConstantTypeArray constantTypeArray;
             
             [ReadOnly] 
             public NativeArray<RenderConstantType> constantTypes;
+
+            [ReadOnly]
+            public NativeArray<CameraBatchChunk> cameraBatchChunks;
 
             [ReadOnly]
             public NativeParallelMultiHashMap<Entity, CameraRenderList> renderLists;
@@ -1002,8 +1029,10 @@ namespace ZG
                     {
                         renderLists.Add(temp);
                     } while (this.renderLists.TryGetNextValue(out temp, ref iterator));
-                    
-                    renderLists.AsArray().Sort();
+
+                    Comparer comparer;
+                    comparer.cameraBatchChunks = cameraBatchChunks;
+                    renderLists.AsArray().Sort(comparer);
                     
                     var renderLocalToWorlds = this.renderLocalToWorlds[index];
                     renderLocalToWorlds.Clear();
@@ -1019,10 +1048,11 @@ namespace ZG
                     
                     var constantBuffers = this.constantBuffers[index];
 
-                    int i, length, 
-                        offset, 
+                    int i, length, offset,  
                         constantByteOffset,
-                        constantTypeStride = 0;
+                        constantTypeStride = 0, 
+                        cameraBatchChunkIndex = -1;
+                    CameraBatchChunk cameraBatchChunk;
                     RenderList.Value value;
                     DynamicComponentTypeHandle constantType = default;
                     NativeArray<RenderLocalToWorld> localToWorlds;
@@ -1030,7 +1060,7 @@ namespace ZG
                     NativeList<byte> caches = default;
                     foreach (var renderList in renderLists)
                     {
-                        if (renderChunk.sharedDataIndex != renderList.batch.sharedDataIndex)
+                        if (renderList.cameraBatchChunkIndex != cameraBatchChunkIndex)
                         {
                             if (caches.IsEmpty)
                                 renderChunk.constantByteOffset = 0;
@@ -1048,54 +1078,35 @@ namespace ZG
                             
                             renderChunk.count = 0;
                             
-                            renderChunk.sharedDataIndex = renderList.batch.sharedDataIndex;
-                        }
-
-                        //entityStorageInfo = entityStorageInfos[chunk.entity];
-                        if (renderList.batch.constantTypeIndex != renderChunk.constantTypeIndex)
-                        {
-                            if (caches.IsEmpty)
-                                renderChunk.constantByteOffset = 0;
-                            else
-                            {
-                                renderChunk.constantByteOffset = constantBuffers[renderChunk.constantTypeIndex].Write(caches.AsArray());
-                                
-                                caches.Clear();
-                            }
-
-                            if (renderChunk.count > 0)
-                                renderChunks.Add(renderChunk);
-                            else
-                                UnityEngine.Assertions.Assert.AreEqual(0, renderChunk.constantByteOffset);
+                            cameraBatchChunk = cameraBatchChunks[renderList.cameraBatchChunkIndex];
                             
-                            renderChunk.count = 0;
-
-                            renderChunk.constantTypeIndex = renderList.batch.constantTypeIndex;
-
-                            if (renderList.batch.constantTypeIndex != -1)
+                            renderChunk.sharedDataIndex = cameraBatchChunk.value.value.sharedDataIndex;
+                            renderChunk.constantTypeIndex = cameraBatchChunk.value.value.constantTypeIndex;
+                            if (renderChunk.constantTypeIndex != -1)
                             {
-                                constantType = constantTypeArray[renderList.batch.constantTypeIndex];
+                                constantType = constantTypeArray[cameraBatchChunk.value.value.constantTypeIndex];
 
                                 constantTypeStride = TypeManager
                                     .GetTypeInfo(
-                                        TypeManager.GetTypeIndexFromStableTypeHash(constantTypes[renderList.batch.constantTypeIndex]
+                                        TypeManager.GetTypeIndexFromStableTypeHash(constantTypes[cameraBatchChunk.value.value.constantTypeIndex]
                                             .stableTypeHash))
                                     .TypeSize;
+                                
+                                if(!caches.IsCreated)
+                                    caches = new NativeList<byte>(Allocator.Temp);
+
+                                caches.ResizeUninitialized(cameraBatchChunk.count * constantTypeStride);
                             }
                         }
 
                         length = renderList.value.length;
-                        if (renderList.batch.constantTypeIndex != -1)
+                        
+                        if (renderChunk.constantTypeIndex != -1)
                         {
                             bytes = renderList.value.Chunk.GetDynamicComponentDataArrayReinterpret<byte>(
                                 ref constantType, 
                                 constantTypeStride);
 
-                            if(!caches.IsCreated)
-                                caches = new NativeList<byte>(Allocator.Temp);
-
-                            offset = caches.Length;
-                            caches.ResizeUninitialized(offset + length * constantTypeStride);
                             for(i = 0; i < length; ++i)
                             {
                                 value = renderList.value[i];
@@ -1103,11 +1114,11 @@ namespace ZG
                                 constantByteOffset = value.entityIndex * constantTypeStride;
 
                                 caches.AsArray()
-                                    .GetSubArray(offset + value.renderIndex * constantTypeStride, constantTypeStride)
+                                    .GetSubArray(value.renderIndex * constantTypeStride, constantTypeStride)
                                     .CopyFrom(bytes.GetSubArray(constantByteOffset, constantTypeStride));
                             }
                         }
-
+                        
                         localToWorlds = renderList.value.Chunk.GetNativeArray(ref localToWorldType)
                             .Reinterpret<RenderLocalToWorld>();
                         
@@ -1151,6 +1162,9 @@ namespace ZG
             public NativeArray<RenderConstantType> constantTypes;
 
             [ReadOnly]
+            public NativeArray<CameraBatchChunk> cameraBatchChunks;
+
+            [ReadOnly]
             public NativeParallelMultiHashMap<Entity, CameraRenderList> renderLists;
             
             [ReadOnly]
@@ -1170,6 +1184,7 @@ namespace ZG
                 Command command;
                 command.constantTypes = constantTypes;
                 command.constantTypeArray = constantTypeArray;
+                command.cameraBatchChunks = cameraBatchChunks;
                 command.renderLists = renderLists;
                 command.localToWorldType = localToWorldType;
                 command.entityArray = chunk.GetNativeArray(entityType);
@@ -1214,7 +1229,7 @@ namespace ZG
 
         private ConstantTypeArray __constantTypeArray;
         
-        private NativeList<CameraBatch> __cameraBatches;
+        private NativeList<CameraBatchChunk> __cameraBatchChunks;
 
         private NativeParallelMultiHashMap<CameraBatch, ArchetypeChunk> __chunks;
 
@@ -1266,7 +1281,7 @@ namespace ZG
             
             state.RequireForUpdate<RenderSingleton>();
 
-            __cameraBatches = new NativeList<CameraBatch>(Allocator.Persistent);
+            __cameraBatchChunks = new NativeList<CameraBatchChunk>(Allocator.Persistent);
 
             __chunks = new NativeParallelMultiHashMap<CameraBatch, ArchetypeChunk>(1, Allocator.Persistent);
 
@@ -1276,7 +1291,7 @@ namespace ZG
         [BurstCompile]
         public void OnDestroy(ref SystemState state)
         {
-            __cameraBatches.Dispose();
+            __cameraBatchChunks.Dispose();
             
             __chunks.Dispose();
 
@@ -1331,7 +1346,7 @@ namespace ZG
                 JobHandle.CombineDependencies(commandEntitiesJobHandle, jobHandle));
 
             Reset reset;
-            reset.cameraBatches = __cameraBatches;
+            reset.cameraBatchChunks = __cameraBatchChunks;
             reset.chunks = __chunks;
             jobHandle = reset.ScheduleByRef(jobHandle);
 
@@ -1339,14 +1354,16 @@ namespace ZG
             __renderLists.Capacity = math.max(
                 __renderLists.Capacity, 
                 capacity);
+            
+            var cameraBatchChunks = __cameraBatchChunks.AsDeferredJobArray();
 
             Collect collect;
-            collect.cameraBatches = __cameraBatches.AsDeferredJobArray();
+            collect.cameraBatchChunks = cameraBatchChunks;
             collect.frustumPlanes = __frustumPlanes;
             collect.boundsWorldType = __boundsWorldType;
             collect.chunks = __chunks;
             collect.renderLists = __renderLists.AsParallelWriter();
-            jobHandle = collect.ScheduleByRef(__cameraBatches, InnerloopBatchCount, jobHandle);
+            jobHandle = collect.ScheduleByRef(__cameraBatchChunks, InnerloopBatchCount, jobHandle);
 
             __entityType.Update(ref state);
             __constantTypeArray.Update(singleton, ref state);
@@ -1357,6 +1374,7 @@ namespace ZG
             CommandEx command;
             command.constantTypeArray = __constantTypeArray;
             command.constantTypes = singleton.constantTypes.AsArray();
+            command.cameraBatchChunks = cameraBatchChunks;
             command.renderLists = __renderLists;
             command.localToWorldType = __localToWorldType;
             command.entityType = __entityType;
