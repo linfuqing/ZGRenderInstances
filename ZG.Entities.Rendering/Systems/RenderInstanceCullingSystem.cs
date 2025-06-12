@@ -12,6 +12,39 @@ using Math = Unity.Mathematics.Geometry.Math;
 
 namespace ZG
 {
+    public struct RenderCullingList : IComponentData
+    {
+        public struct Value
+        {
+            public int renderIndex;
+
+            public int entityIndex;
+        }
+        
+        public FixedList512Bytes<int> values;
+
+        public int length => values.Length;
+
+        public Value this[int index]
+        {
+            get
+            {
+                var value = values[index];
+                
+                Value result;
+                result.renderIndex = value >> 8;
+                result.entityIndex = value & 0xFF;
+                
+                return result;
+            }
+        }
+        
+        public void Add(int entityIndex, int renderIndex)
+        {
+            values.Add(renderIndex << 8 | entityIndex);
+        }
+    }
+
     public struct RenderSingleton : IComponentData, IDisposable
     {
         public uint sharedDataVersion;
@@ -569,17 +602,17 @@ namespace ZG
                 }
             }
         }
-        
+
         private struct Chunk : IComparable<Chunk>
         {
+            public long renderQueue;
+            
             public int sharedDataIndex;
             public int constantTypeIndex;
-            public long renderQueue;
+
+            public int count;
 
             public ArchetypeChunk value;
-            public FixedList128Bytes<byte> entityIndices;
-            //public float depth;
-            //public Entity entity;
 
             public int CompareTo(Chunk other)
             {
@@ -646,26 +679,25 @@ namespace ZG
         [BurstCompile]
         private struct Culling : IJobChunk
         {
-            private struct Less : System.Collections.Generic.IComparer<byte>
+            private struct Entry : IComparable<Entry>
             {
-                public FixedList128Bytes<byte> depths;
+                public float depth;
                 
-                public int Compare(byte x, byte y)
+                public int index;
+
+                public ArchetypeChunk chunk;
+
+                public int CompareTo(Entry other)
                 {
-                    return depths[x].CompareTo(depths[y]);
+                    return depth.CompareTo(other.depth);
+                }
+
+                public override int GetHashCode()
+                {
+                    return depth.GetHashCode();
                 }
             }
-            
-            private struct Greater : System.Collections.Generic.IComparer<byte>
-            {
-                public FixedList128Bytes<byte> depths;
-                
-                public int Compare(byte x, byte y)
-                {
-                    return depths[y].CompareTo(depths[x]);
-                }
-            }
-            
+
             [ReadOnly] 
             public NativeHashMap<RenderSharedData, int> sharedDataIndices;
 
@@ -678,8 +710,8 @@ namespace ZG
             [ReadOnly] 
             public NativeArray<Entity> cameraEntities;
 
-            //[ReadOnly] 
-            //public EntityTypeHandle entityType;
+            [ReadOnly] 
+            public ComponentTypeHandle<ChunkHeader> chunkHeaderType;
 
             [ReadOnly] 
             public SharedComponentTypeHandle<RenderSharedData> sharedDataType;
@@ -695,6 +727,8 @@ namespace ZG
             
             [ReadOnly] 
             public ComponentTypeHandle<RenderBoundsWorldChunk> boundsWorldChunkType;
+            
+            public ComponentTypeHandle<RenderCullingList> cullingListType;
 
             public NativeParallelMultiHashMap<Entity, Chunk>.ParallelWriter chunks;
 
@@ -708,64 +742,159 @@ namespace ZG
                 result.renderQueue = chunk.Has(renderQueueType) ? chunk.GetSharedComponent(renderQueueType).value : 0L;
                 result.value = chunk;
                 
-                FixedList128Bytes<byte> depths;
-                MinMaxAABB aabb = chunk.GetChunkComponentData(ref boundsWorldChunkType).aabb, worldAABB;
                 RenderFrustumPlanes frustumPlanes;
-                ChunkEntityEnumerator iterator;
-                //var entityArray = chunk.GetNativeArray(entityType);
-                var boundsWorld = chunk.GetNativeArray(ref boundsWorldType);
+                FixedList128Bytes<byte> depths;
+                NativeArray<RenderBoundsWorld> boundsWorld;
+                NativeList<Entry> entries = default;
+                var chunkHeaders = chunk.GetNativeArray(ref chunkHeaderType);
                 foreach (var cameraEntity in cameraEntities)
                 {
                     if (!this.frustumPlanes.TryGetComponent(cameraEntity, out frustumPlanes))
                         continue;
 
+                    if ((result.renderQueue >> 32) > (int)UnityEngine.Rendering.RenderQueue.GeometryLast)
+                        result.count = __CullingWithSort(false, chunkHeaders, frustumPlanes, ref entries);
+                    else
+                        result.count = __CullingWithoutSort(chunkHeaders, frustumPlanes);
+
+                    chunks.Add(cameraEntity, result);
+                }
+            }
+
+            private int __CullingWithoutSort(in NativeArray<ChunkHeader> chunkHeaders, in RenderFrustumPlanes frustumPlanes)
+            {
+                RenderCullingList cullingList;
+                NativeArray<RenderBoundsWorld> boundsWorld;
+                ChunkHeader chunkHeader;
+                MinMaxAABB aabb, worldAABB;
+                int i, j, count, renderIndex = 0, numChunkHeaders = chunkHeaders.Length;
+                for(i = 0; i < numChunkHeaders; ++i)
+                {
+                    cullingList = default;
+
+                    chunkHeader = chunkHeaders[i];
+                    aabb = chunkHeader.ArchetypeChunk.GetChunkComponentData(ref boundsWorldChunkType).aabb;
+                    if (RenderFrustumPlanes.IntersectResult.Out !=
+                        frustumPlanes.Intersect(aabb.Center, aabb.Extents))
+                    {
+                        boundsWorld = chunkHeader.ArchetypeChunk.GetNativeArray(ref boundsWorldType);
+
+                        count = chunkHeader.ArchetypeChunk.Count;
+                        for (j = 0; j < count; ++j)
+                        {
+                            worldAABB = boundsWorld[j].aabb;
+                            if (RenderFrustumPlanes.IntersectResult.Out ==
+                                frustumPlanes.Intersect(worldAABB.Center, worldAABB.Extents))
+                                continue;
+
+                            cullingList.Add(j, renderIndex++);
+                        }
+                    }
+
+                    chunkHeader.ArchetypeChunk.SetChunkComponentData(ref cullingListType, cullingList);
+                }
+
+                return renderIndex;
+            }
+
+            private int __CullingWithSort(
+                bool isLess, 
+                in NativeArray<ChunkHeader> chunkHeaders,
+                in RenderFrustumPlanes frustumPlanes, 
+                ref NativeList<Entry> entries)
+            {
+                NativeArray<RenderBoundsWorld> boundsWorld;
+                ChunkHeader chunkHeader;
+                MinMaxAABB aabb, worldAABB;
+                Entry entry;
+                int i, j, count, numChunkHeaders = chunkHeaders.Length;
+                for(i = 0; i < numChunkHeaders; ++i)
+                {
+                    chunkHeader = chunkHeaders[i];
+                    chunkHeader.ArchetypeChunk.SetChunkComponentData(ref cullingListType, default);
+                    
+                    aabb = chunkHeader.ArchetypeChunk.GetChunkComponentData(ref boundsWorldChunkType).aabb;
                     if (RenderFrustumPlanes.IntersectResult.Out ==
                         frustumPlanes.Intersect(aabb.Center, aabb.Extents))
                         continue;
 
-                    result.entityIndices = new FixedList128Bytes<byte>();
+                    entry.chunk = chunkHeader.ArchetypeChunk;
 
-                    depths = new FixedList128Bytes<byte>();
-                    depths.Length = chunk.Count;
-                    
-                    iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
-                    while (iterator.NextEntityIndex(out int i))
+                    boundsWorld = chunkHeader.ArchetypeChunk.GetNativeArray(ref boundsWorldType);
+
+                    count = chunkHeader.ArchetypeChunk.Count;
+                    for(j = 0; j < count; ++j)
                     {
-                        worldAABB = boundsWorld[i].aabb;
+                        worldAABB = boundsWorld[j].aabb;
                         if (RenderFrustumPlanes.IntersectResult.Out ==
                             frustumPlanes.Intersect(worldAABB.Center, worldAABB.Extents))
                             continue;
 
-                        depths[i] = (byte)(frustumPlanes.DepthOf(worldAABB.Center) * byte.MaxValue);
+                        entry.index = j;
 
-                        //instance.depth = frustumPlanes.DepthOf(worldAABB.Center);
-                        //instance.entity = entityArray[i];
-                        result.entityIndices.Add((byte)i);
+                        entry.depth = frustumPlanes.DepthOf(worldAABB.Center);
+
+                        if (!entries.IsCreated)
+                            entries = new NativeList<Entry>(Allocator.Temp);
+                        
+                        entries.Add(entry);
                     }
+                }
 
-                    if ((result.renderQueue >> 32) > (int)UnityEngine.Rendering.RenderQueue.GeometryLast)
+                int renderIndex = 0;
+                if (!entries.IsEmpty)
+                {
+                    entries.Sort();
+
+                    ArchetypeChunk chunk = default;
+                    RenderCullingList cullingList = default;
+                    if (isLess)
                     {
-                        Greater greater;
-                        greater.depths = depths;
-                        result.entityIndices.Sort(greater);
+                        foreach (var temp in entries)
+                        {
+                            if (temp.chunk != chunk)
+                            {
+                                chunk.SetChunkComponentData(ref cullingListType, cullingList);
+                                
+                                chunk = temp.chunk;
+                                
+                                cullingList = chunk.GetChunkComponentData(ref cullingListType);
+                            }
+
+                            cullingList.Add(temp.index, renderIndex++);
+                        }
                     }
                     else
                     {
-                        Less less;
-                        less.depths = depths;
-                        result.entityIndices.Sort(less);
-                    }
+                        int length = entries.Length;
+                        for(i = length - 1; i >= 0; --i)
+                        {
+                            entry = entries[i];
+                            if (entry.chunk != chunk)
+                            {
+                                chunk.SetChunkComponentData(ref cullingListType, cullingList);
+                                
+                                chunk = entry.chunk;
+                                
+                                cullingList = chunk.GetChunkComponentData(ref cullingListType);
+                            }
 
-                    chunks.Add(cameraEntity, result);
+                            cullingList.Add(entry.index, renderIndex++);
+                        }
+                    }
+                    
+                    chunk.SetChunkComponentData(ref cullingListType, cullingList);
+                    
+                    entries.Clear();
                 }
+
+                return renderIndex;
             }
         }
 
         private struct Command
         {
             public ConstantTypeArray constantTypeArray;
-            
-            //public EntityStorageInfoLookup entityStorageInfos;
             
             [ReadOnly] 
             public NativeArray<RenderConstantType> constantTypes;
@@ -774,7 +903,13 @@ namespace ZG
             public NativeParallelMultiHashMap<Entity, Chunk> chunks;
             
             [ReadOnly]
+            public ComponentTypeHandle<RenderCullingList> cullingListType;
+            
+            [ReadOnly]
             public ComponentTypeHandle<LocalToWorld> localToWorldType;
+
+            [ReadOnly]
+            public ComponentTypeHandle<ChunkHeader> chunkHeaderType;
 
             [ReadOnly] 
             public NativeArray<Entity> entityArray;
@@ -809,11 +944,15 @@ namespace ZG
                     
                     var constantBuffers = this.constantBuffers[index];
 
-                    int constantByteOffset,
+                    int i, length, 
+                        offset, 
+                        constantByteOffset,
                         constantTypeStride = 0;
-                    //EntityStorageInfo entityStorageInfo;
+                    RenderCullingList.Value value;
+                    RenderCullingList cullingList;
                     DynamicComponentTypeHandle constantType = default;
                     NativeArray<RenderLocalToWorld> localToWorlds;
+                    NativeArray<ChunkHeader> chunkHeaders;
                     NativeArray<byte> bytes;
                     NativeList<byte> caches = default;
                     foreach (var chunk in chunks)
@@ -872,28 +1011,53 @@ namespace ZG
                             }
                         }
                         
+                        chunkHeaders = chunk.value.GetNativeArray(ref chunkHeaderType);
                         if (chunk.constantTypeIndex != -1)
                         {
-                            bytes = chunk.value.GetDynamicComponentDataArrayReinterpret<byte>(
-                                ref constantType, 
-                                constantTypeStride);
-                            
                             if(!caches.IsCreated)
                                 caches = new NativeList<byte>(Allocator.Temp);
 
-                            foreach (var entityIndex in chunk.entityIndices)
+                            offset = caches.Length;
+                            caches.ResizeUninitialized(offset + chunk.count * constantTypeStride);
+
+                            foreach (var chunkHeader in chunkHeaders)
                             {
-                                constantByteOffset = entityIndex * constantTypeStride;
-                            
-                                caches.AddRange(bytes.GetSubArray(constantByteOffset, constantTypeStride));
+                                bytes = chunkHeader.ArchetypeChunk.GetDynamicComponentDataArrayReinterpret<byte>(
+                                    ref constantType, 
+                                    constantTypeStride);
+
+                                cullingList = chunkHeader.ArchetypeChunk.GetChunkComponentData(ref cullingListType);
+                                length = cullingList.length;
+                                for(i = 0; i < length; ++i)
+                                {
+                                    value = cullingList[i];
+                                    
+                                    constantByteOffset = value.entityIndex * constantTypeStride;
+
+                                    caches.AsArray()
+                                        .GetSubArray(offset + value.renderIndex * constantTypeStride, constantTypeStride)
+                                        .CopyFrom(bytes.GetSubArray(constantByteOffset, constantTypeStride));
+                                }
                             }
                         }
 
-                        localToWorlds = chunk.value.GetNativeArray(ref localToWorldType).Reinterpret<RenderLocalToWorld>();
-                        foreach (var entityIndex in chunk.entityIndices)
-                            renderLocalToWorlds.Add(localToWorlds[entityIndex]);
+                        offset = renderLocalToWorlds.Length;
+                        renderLocalToWorlds.ResizeUninitialized(offset + chunk.count);
+                        foreach (var chunkHeader in chunkHeaders)
+                        {
+                            localToWorlds = chunkHeader.ArchetypeChunk.GetNativeArray(ref localToWorldType)
+                                .Reinterpret<RenderLocalToWorld>();
+                            cullingList = chunkHeader.ArchetypeChunk.GetChunkComponentData(ref cullingListType);
+                            length = cullingList.length;
+                            for(i = 0; i < length; ++i)
+                            {
+                                value = cullingList[i];
+                                    
+                                renderLocalToWorlds[value.renderIndex + offset] = localToWorlds[value.entityIndex];
+                            }
+                        }
                         
-                        renderChunk.count += chunk.entityIndices.Length;
+                        renderChunk.count += chunk.count;
                     }
                     
                     if (caches.IsEmpty)
@@ -926,7 +1090,13 @@ namespace ZG
             public NativeParallelMultiHashMap<Entity, Chunk> chunks;
             
             [ReadOnly]
+            public ComponentTypeHandle<RenderCullingList> cullingListType;
+
+            [ReadOnly]
             public ComponentTypeHandle<LocalToWorld> localToWorldType;
+
+            [ReadOnly]
+            public ComponentTypeHandle<ChunkHeader> chunkHeaderType;
 
             [ReadOnly] 
             public EntityTypeHandle entityType;
@@ -943,7 +1113,9 @@ namespace ZG
                 command.constantTypes = constantTypes;
                 command.constantTypeArray = constantTypeArray;
                 command.chunks = chunks;
+                command.cullingListType = cullingListType;
                 command.localToWorldType = localToWorldType;
+                command.chunkHeaderType = chunkHeaderType;
                 command.entityArray = chunk.GetNativeArray(entityType);
                 command.constantBuffers = chunk.GetBufferAccessor(ref constantBufferType);
                 command.renderChunks = chunk.GetBufferAccessor(ref renderChunkType);
@@ -963,14 +1135,17 @@ namespace ZG
 
         private SharedComponentTypeHandle<RenderConstantType> __constantType;
 
-        
         private SharedComponentTypeHandle<RenderQueue> __renderQueueType;
         
         private ComponentTypeHandle<RenderBounds> __boundsType;
         private ComponentTypeHandle<RenderBoundsWorld> __boundsWorldType;
         private ComponentTypeHandle<RenderBoundsWorldChunk> __boundsWorldChunkType;
 
+        private ComponentTypeHandle<RenderCullingList> __cullingListType;
+        
         private ComponentTypeHandle<LocalToWorld> __localToWorldType;
+
+        private ComponentTypeHandle<ChunkHeader> __chunkHeaderType;
 
         private ComponentLookup<RenderFrustumPlanes> __frustumPlanes;
 
@@ -999,7 +1174,11 @@ namespace ZG
             __boundsWorldType = state.GetComponentTypeHandle<RenderBoundsWorld>();
             __boundsWorldChunkType = state.GetComponentTypeHandle<RenderBoundsWorldChunk>();
             
+            __cullingListType = state.GetComponentTypeHandle<RenderCullingList>();
+            
             __localToWorldType = state.GetComponentTypeHandle<LocalToWorld>(true);
+            __chunkHeaderType = state.GetComponentTypeHandle<ChunkHeader>(true);
+            
             __frustumPlanes = state.GetComponentLookup<RenderFrustumPlanes>(true);
             
             __constantBufferType = state.GetBufferTypeHandle<RenderConstantBuffer>();
@@ -1019,7 +1198,7 @@ namespace ZG
             
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
                 __groupToCulling = builder
-                    .WithAll<RenderSharedData, RenderBoundsWorld>()
+                    .WithAll<RenderSharedData, RenderBoundsWorld, ChunkHeader>()
                     .WithAllChunkComponent<RenderBoundsWorldChunk>()
                     .Build(ref state);
             
@@ -1059,7 +1238,9 @@ namespace ZG
             transform.boundsWorldChunkType = __boundsWorldChunkType;
             var jobHandle = transform.ScheduleParallelByRef(__groupToTransform, state.Dependency);
             
+            __chunkHeaderType.Update(ref state);
             __frustumPlanes.Update(ref state);
+            __cullingListType.Update(ref state);
             __sharedDataType.Update(ref state);
             __constantType.Update(ref state);
             __renderQueueType.Update(ref state);
@@ -1078,11 +1259,13 @@ namespace ZG
             culling.cameraEntities =
                 __groupToCommand.ToEntityListAsync(state.WorldUpdateAllocator, out var commandEntitiesJobHandle)
                     .AsDeferredJobArray();
+            culling.chunkHeaderType = __chunkHeaderType;
             culling.sharedDataType = __sharedDataType;
             culling.constantType = __constantType;
             culling.renderQueueType = __renderQueueType;
             culling.boundsWorldType = __boundsWorldType;
             culling.boundsWorldChunkType = __boundsWorldChunkType;
+            culling.cullingListType = __cullingListType;
             culling.chunks = __chunks.AsParallelWriter();
             jobHandle = culling.ScheduleParallelByRef(__groupToCulling,
                 JobHandle.CombineDependencies(commandEntitiesJobHandle, jobHandle));
@@ -1097,7 +1280,9 @@ namespace ZG
             command.constantTypeArray = __constantTypeArray;
             command.constantTypes = singleton.constantTypes.AsArray();
             command.chunks = __chunks;
+            command.cullingListType = __cullingListType;
             command.localToWorldType = __localToWorldType;
+            command.chunkHeaderType = __chunkHeaderType;
             command.entityType = __entityType;
             command.constantBufferType = __constantBufferType;
             command.renderChunkType = __renderChunkType;
