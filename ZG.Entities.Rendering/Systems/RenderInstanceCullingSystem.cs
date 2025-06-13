@@ -1148,7 +1148,7 @@ namespace ZG
                             }
 
                             renderLocalToWorlds.AsNativeArray()
-                                .GetSubArray(previous.renderIndex, count)
+                                .GetSubArray(localToWorldsOffset + previous.renderIndex, count)
                                 .CopyFrom(localToWorlds.GetSubArray(previous.entityIndex, count));
 
                             previous = next;
@@ -1156,7 +1156,7 @@ namespace ZG
                         }
                         
                         renderLocalToWorlds.AsNativeArray()
-                            .GetSubArray(previous.renderIndex, count)
+                            .GetSubArray(localToWorldsOffset + previous.renderIndex, count)
                             .CopyFrom(localToWorlds.GetSubArray(previous.entityIndex, count));
                         
                         renderChunk.count += length;
