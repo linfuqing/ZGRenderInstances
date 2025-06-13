@@ -180,7 +180,8 @@ namespace ZG
 
         public static int ComputeCount(int sharedDataCount, int constantTypeEntityCount, int alignment, int stride)
         {
-            return constantTypeEntityCount + (sharedDataCount * alignment + stride - 1) / stride;
+            return math.min(constantTypeEntityCount - 1, sharedDataCount) * math.max(alignment, stride) + stride;
+            //return constantTypeEntityCount + (sharedDataCount * alignment + stride - 1) / stride;
             //return math.max(constantTypeEntityCount, (alignment + stride - 1) / stride) * sharedDataCount;
         }
 
