@@ -1048,12 +1048,12 @@ namespace ZG
                     
                     var constantBuffers = this.constantBuffers[index];
 
-                    int i, length, localToWorldsOffset = 0,  
-                        constantByteOffset,
+                    int i, length, count, 
+                        localToWorldsOffset = 0,  
                         constantTypeStride = 0, 
                         cameraBatchChunkIndex = -1;
                     CameraBatchChunk cameraBatchChunk;
-                    RenderList.Value value;
+                    RenderList.Value previous, next;
                     DynamicComponentTypeHandle constantType = default;
                     NativeArray<RenderLocalToWorld> localToWorlds;
                     NativeArray<byte> destination = default, source;
@@ -1061,6 +1061,8 @@ namespace ZG
                     {
                         if (renderList.cameraBatchChunkIndex != cameraBatchChunkIndex)
                         {
+                            cameraBatchChunkIndex = renderList.cameraBatchChunkIndex;
+
                             if(renderChunk.count > 0)
                                 renderChunks.Add(renderChunk);
                             else
@@ -1099,27 +1101,63 @@ namespace ZG
                                 ref constantType, 
                                 constantTypeStride);
 
-                            for(i = 0; i < length; ++i)
+                            count = 1;
+                            previous = renderList.value[0];
+                            for(i = 1; i < length; ++i)
                             {
-                                value = renderList.value[i];
-                                
-                                constantByteOffset = value.entityIndex * constantTypeStride;
+                                next = renderList.value[i];
+                                if (next.entityIndex == previous.entityIndex + count &&
+                                    next.renderIndex == previous.renderIndex + count)
+                                {
+                                    ++count;
+                                    
+                                    continue;
+                                }
+
+                                count *= constantTypeStride;
 
                                 destination
-                                    .GetSubArray(value.renderIndex * constantTypeStride, constantTypeStride)
-                                    .CopyFrom(source.GetSubArray(constantByteOffset, constantTypeStride));
+                                    .GetSubArray(previous.renderIndex * constantTypeStride, count)
+                                    .CopyFrom(source.GetSubArray(previous.entityIndex * constantTypeStride, count));
+
+                                previous = next;
+                                count = 1;
                             }
+                            
+                            count *= constantTypeStride;
+
+                            destination
+                                .GetSubArray(previous.renderIndex * constantTypeStride, count)
+                                .CopyFrom(source.GetSubArray(previous.entityIndex * constantTypeStride, count));
                         }
                         
                         localToWorlds = renderList.value.Chunk.GetNativeArray(ref localToWorldType)
                             .Reinterpret<RenderLocalToWorld>();
                         
-                        for(i = 0; i < length; ++i)
+                        count = 1;
+                        previous = renderList.value[0];
+                        for(i = 1; i < length; ++i)
                         {
-                            value = renderList.value[i];
-                            
-                            renderLocalToWorlds[value.renderIndex + localToWorldsOffset] = localToWorlds[value.entityIndex];
+                            next = renderList.value[i];
+                            if (next.entityIndex == previous.entityIndex + count &&
+                                next.renderIndex == previous.renderIndex + count)
+                            {
+                                ++count;
+                                    
+                                continue;
+                            }
+
+                            renderLocalToWorlds.AsNativeArray()
+                                .GetSubArray(previous.renderIndex, count)
+                                .CopyFrom(localToWorlds.GetSubArray(previous.entityIndex, count));
+
+                            previous = next;
+                            count = 1;
                         }
+                        
+                        renderLocalToWorlds.AsNativeArray()
+                            .GetSubArray(previous.renderIndex, count)
+                            .CopyFrom(localToWorlds.GetSubArray(previous.entityIndex, count));
                         
                         renderChunk.count += length;
                     }
