@@ -17,7 +17,7 @@ using Plane = UnityEngine.Plane;
 
 namespace ZG
 {
-    public struct RenderSharedData : ISharedComponentData, IEquatable<RenderSharedData>
+    public struct RenderSharedData : ISharedComponentData, IEquatable<RenderSharedData>, IComparable<RenderSharedData>
     {
         public int subMeshIndex;
         public UnityObjectRef<Mesh> mesh;
@@ -28,6 +28,19 @@ namespace ZG
             return subMeshIndex == other.subMeshIndex &&
                    mesh.Equals(other.mesh) &&
                    material.Equals(other.material);
+        }
+
+        public int CompareTo(RenderSharedData other)
+        {
+            int result = material.GetHashCode().CompareTo(other.material.GetHashCode());
+            if (result == 0)
+            {
+                result = mesh.GetHashCode().CompareTo(other.mesh.GetHashCode());
+                if(result == 0)
+                    result = subMeshIndex.CompareTo(other.subMeshIndex);
+            }
+            
+            return result;
         }
 
         public override int GetHashCode()

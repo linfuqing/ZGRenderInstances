@@ -160,7 +160,7 @@ namespace ZG
 
     public struct RenderList : IComponentData
     {
-        public const int MAX_INSTANCE_COUNT = 1024;
+        public const int MAX_INSTANCE_COUNT = 1023;
         public const int MIN_COMPUTE_BUFFER_COUNT = MAX_INSTANCE_COUNT * 32;
         public static readonly Matrix4x4[] Matrices = new Matrix4x4[MAX_INSTANCE_COUNT];
         public static readonly Dictionary<int, List<ComputeBuffer>> ComputeBuffers = new Dictionary<int, List<ComputeBuffer>>();
@@ -388,7 +388,7 @@ namespace ZG
                 for (int i = 0; i < numComputeBuffers; ++i)
                 {
                     byteOffset = __byteOffsets[i];
-                    if(byteOffset >= 0)         
+                    if(byteOffset >= 0)
 #if UNITY_WEBGL
                         computeBuffers[i].SetData(__bytes.AsArray().GetSubArray(__byteOffsets[i + numComputeBuffers], byteOffset));
 #else
@@ -767,7 +767,7 @@ namespace ZG
 
         protected override void OnUpdate()
         {
-            bool willCurrentFrameRender = true;//OnDemandRendering.willCurrentFrameRender;
+            bool willCurrentFrameRender = OnDemandRendering.willCurrentFrameRender;
 
             RenderInstanceCullingSystem.WillCurrentFrameRender.Data = willCurrentFrameRender;
 

@@ -65,6 +65,8 @@ namespace ZG
 
                 entityManager.GetAllUniqueSharedComponents(out sharedDatas, Allocator.Persistent);
 
+                sharedDatas.Sort();
+                
                 int numSharedDatas = sharedDatas.Length;
                 if (sharedDataIndices.IsCreated)
                     sharedDataIndices.Clear();
@@ -614,7 +616,7 @@ namespace ZG
             }
         }
 
-        private struct CameraBatchChunk : IEquatable<CameraBatchChunk>
+        private struct CameraBatchChunk : IEquatable<CameraBatchChunk>, IComparable<CameraBatchChunk>
         {
             public CameraBatch value;
 
@@ -625,6 +627,11 @@ namespace ZG
                 return value.Equals(other.value);
             }
 
+            public int CompareTo(CameraBatchChunk other)
+            {
+                return value.value.CompareTo(other.value.value);
+            }
+            
             public override int GetHashCode()
             {
                 return value.GetHashCode();
@@ -774,6 +781,7 @@ namespace ZG
             }
         }
 
+        [BurstCompile]
         private struct Reset : IJob
         {
             [ReadOnly] 
@@ -796,9 +804,11 @@ namespace ZG
                 int count = cameraBatchChunks.AsArray().Unique();
                 
                 cameraBatchChunks.ResizeUninitialized(count);
+                cameraBatchChunks.Sort();
             }
         }
 
+        [BurstCompile]
         private struct Collect : IJobParallelForDefer
         {
             private struct Entry : IComparable<Entry>
