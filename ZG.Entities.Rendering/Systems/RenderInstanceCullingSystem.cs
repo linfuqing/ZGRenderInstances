@@ -1043,7 +1043,7 @@ namespace ZG
                     RenderChunk renderChunk;
                     renderChunk.sharedDataIndex = -1;
                     renderChunk.constantTypeIndex = -1;
-                    //renderChunk.constantByteOffset = 0;
+                    renderChunk.constantByteOffset = 0;
                     renderChunk.count = 0;
                     
                     var constantBuffers = this.constantBuffers[index];
@@ -1056,21 +1056,11 @@ namespace ZG
                     RenderList.Value value;
                     DynamicComponentTypeHandle constantType = default;
                     NativeArray<RenderLocalToWorld> localToWorlds;
-                    NativeArray<byte> bytes;
-                    NativeList<byte> caches = default;
+                    NativeArray<byte> destination = default, source;
                     foreach (var renderList in renderLists)
                     {
                         if (renderList.cameraBatchChunkIndex != cameraBatchChunkIndex)
                         {
-                            if (caches.IsEmpty)
-                                renderChunk.constantByteOffset = 0;
-                            else
-                            {
-                                renderChunk.constantByteOffset = constantBuffers[renderChunk.constantTypeIndex].Write(caches.AsArray());
-                                
-                                caches.Clear();
-                            }
-
                             if(renderChunk.count > 0)
                                 renderChunks.Add(renderChunk);
                             else
@@ -1095,10 +1085,9 @@ namespace ZG
                                             .stableTypeHash))
                                     .TypeSize;
                                 
-                                if(!caches.IsCreated)
-                                    caches = new NativeList<byte>(Allocator.Temp);
-
-                                caches.ResizeUninitialized(cameraBatchChunk.count * constantTypeStride);
+                                destination = constantBuffers[renderChunk.constantTypeIndex].Write(
+                                    cameraBatchChunk.count * constantTypeStride, 
+                                    out renderChunk.constantByteOffset);
                             }
                         }
 
@@ -1106,7 +1095,7 @@ namespace ZG
                         
                         if (renderChunk.constantTypeIndex != -1)
                         {
-                            bytes = renderList.value.Chunk.GetDynamicComponentDataArrayReinterpret<byte>(
+                            source = renderList.value.Chunk.GetDynamicComponentDataArrayReinterpret<byte>(
                                 ref constantType, 
                                 constantTypeStride);
 
@@ -1116,9 +1105,9 @@ namespace ZG
                                 
                                 constantByteOffset = value.entityIndex * constantTypeStride;
 
-                                caches.AsArray()
+                                destination
                                     .GetSubArray(value.renderIndex * constantTypeStride, constantTypeStride)
-                                    .CopyFrom(bytes.GetSubArray(constantByteOffset, constantTypeStride));
+                                    .CopyFrom(source.GetSubArray(constantByteOffset, constantTypeStride));
                             }
                         }
                         
@@ -1135,18 +1124,10 @@ namespace ZG
                         renderChunk.count += length;
                     }
                     
-                    if (caches.IsEmpty)
-                        renderChunk.constantByteOffset = 0;
-                    else
-                        renderChunk.constantByteOffset = constantBuffers[renderChunk.constantTypeIndex].Write(caches.AsArray());
-
                     if(renderChunk.count > 0)
                         renderChunks.Add(renderChunk);
                     else
                         UnityEngine.Assertions.Assert.AreEqual(0, renderChunk.constantByteOffset);
-
-                    if (caches.IsCreated)
-                        caches.Dispose();
 
                     renderLists.Dispose();
                 }

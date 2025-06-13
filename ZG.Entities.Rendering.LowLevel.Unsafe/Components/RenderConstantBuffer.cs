@@ -40,6 +40,20 @@ namespace ZG
             __bytes = (byte*)bytes.GetUnsafePtr();
         }
 
+        public unsafe NativeArray<byte> Write(int byteCount, out int offset)
+        {
+            int bytesToOffset = (byteCount + Alignment - 1) / Alignment * Alignment, 
+                length = Interlocked.Add(ref __byteOffset->ElementAt(Index), bytesToOffset);
+            UnityEngine.Assertions.Assert.IsTrue(length <= Length);
+            offset = length - bytesToOffset;
+
+            return CollectionHelper.ConvertExistingDataToNativeArray<byte>(
+                __bytes + offset, 
+                byteCount, 
+                Allocator.None,
+                true);
+        }
+
         public unsafe int Write(in NativeArray<byte> bytes)
         {
             int numBytes = bytes.Length, 
