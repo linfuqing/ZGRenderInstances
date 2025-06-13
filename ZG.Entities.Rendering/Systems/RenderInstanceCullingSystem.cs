@@ -873,7 +873,8 @@ namespace ZG
                             renderList.value.Add(i, renderIndex++);
                         }
                     
-                        renderLists.Add(cameraBatch.entity, renderList);
+                        if(renderList.value.length > 0)
+                            renderLists.Add(cameraBatch.entity, renderList);
                     } while (chunks.TryGetNextValue(out chunk, ref iterator));
                 }
 
