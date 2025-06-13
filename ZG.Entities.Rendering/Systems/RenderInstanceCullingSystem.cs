@@ -1351,12 +1351,13 @@ namespace ZG
             __constantType.Update(ref state);
             __renderQueueType.Update(ref state);
 
-            int capacity = __groupToCulling.CalculateChunkCount() * __groupToCommand.CalculateEntityCount();
+            int entityCount = __groupToCulling.CalculateEntityCount(), 
+                cameraCount = __groupToCommand.CalculateEntityCount();
             
             __chunks.Clear();
             __chunks.Capacity = math.max(
                 __chunks.Capacity, 
-                capacity);
+                __groupToCulling.CalculateChunkCount() * cameraCount);
 
             var singleton = SystemAPI.GetSingleton<RenderSingleton>();
 
@@ -1383,7 +1384,7 @@ namespace ZG
             __renderLists.Clear();
             __renderLists.Capacity = math.max(
                 __renderLists.Capacity, 
-                capacity);
+                entityCount * cameraCount);
             
             var cameraBatchChunks = __cameraBatchChunks.AsDeferredJobArray();
 
