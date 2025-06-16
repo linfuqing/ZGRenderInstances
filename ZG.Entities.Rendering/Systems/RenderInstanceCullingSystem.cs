@@ -573,13 +573,20 @@ namespace ZG
             }
         }
 
-        private struct Batch : IComparable<Batch>
+        private struct Batch : IEquatable<Batch>, IComparable<Batch>
         {
             public long renderQueue;
             
             public int sharedDataIndex;
             public int constantTypeIndex;
 
+            public bool Equals(Batch other)
+            {
+                return renderQueue == other.renderQueue && 
+                       sharedDataIndex == other.sharedDataIndex && 
+                       constantTypeIndex == other.constantTypeIndex;
+            }
+            
             public int CompareTo(Batch other)
             {
                 int result = renderQueue.CompareTo(other.renderQueue);
@@ -592,7 +599,7 @@ namespace ZG
                 
                 return constantTypeIndex.CompareTo(other.constantTypeIndex);
             }
-
+            
             public override int GetHashCode()
             {
                 return (int)(renderQueue >> 32) ^ (int)renderQueue ^ sharedDataIndex ^ constantTypeIndex;
@@ -607,7 +614,7 @@ namespace ZG
             
             public bool Equals(CameraBatch other)
             {
-                return entity == other.entity && value.CompareTo(other.value) == 0;
+                return entity == other.entity && value.Equals(other.value);
             }
 
             public override int GetHashCode()
@@ -629,7 +636,11 @@ namespace ZG
 
             public int CompareTo(CameraBatchChunk other)
             {
-                return value.value.CompareTo(other.value.value);
+                int result = value.entity.CompareTo(other.value.entity);
+                if(result == 0)
+                    result = value.value.CompareTo(other.value.value);
+
+                return result;
             }
             
             public override int GetHashCode()
