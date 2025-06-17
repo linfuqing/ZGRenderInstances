@@ -369,6 +369,7 @@ namespace ZG
 
                         constantBuffers[computeBufferOffset] = new RenderConstantBuffer(
                             alignment,
+                            stride, 
                             computeBufferIndex,
                             ref __byteOffsets,
                             ref bytes);
@@ -429,6 +430,8 @@ namespace ZG
                             
                             __bufferIDs[constantType.bufferName] = bufferID;
                         }
+                        
+                        UnityEngine.Assertions.Assert.AreEqual(0, chunk.constantByteOffset % SystemInfo.constantBufferOffsetAlignment);
                         
                         stride = TypeManager.GetTypeInfo(TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash)).TypeSize;
                         commandBuffer.SetGlobalConstantBuffer(

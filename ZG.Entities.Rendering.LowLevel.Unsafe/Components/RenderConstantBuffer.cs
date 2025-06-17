@@ -10,6 +10,8 @@ namespace ZG
     {
         private readonly int Alignment;
 
+        private readonly int Stride;
+
         private readonly int Index;
         private readonly int Length;
         
@@ -23,11 +25,14 @@ namespace ZG
 
         public unsafe RenderConstantBuffer(
             int alignment, 
+            int stride, 
             int index,
             ref NativeList<int> byteOffset,
             ref NativeArray<byte> bytes)
         {
             Alignment = alignment;
+
+            Stride = stride;
 
             Index = index;
 
@@ -40,16 +45,20 @@ namespace ZG
             __bytes = (byte*)bytes.GetUnsafePtr();
         }
 
-        public unsafe NativeArray<byte> Write(int byteCount, out int offset)
+        public unsafe NativeArray<byte> Write(int stride, int count, out int byteOffset)
         {
-            int bytesToOffset = (byteCount + Alignment - 1) / Alignment * Alignment, 
+            UnityEngine.Assertions.Assert.AreEqual(stride, Stride);
+            int numBytes = stride * count, bytesToOffset = (numBytes + Alignment - 1) / Alignment * Alignment, 
                 length = Interlocked.Add(ref __byteOffset->ElementAt(Index), bytesToOffset);
             UnityEngine.Assertions.Assert.IsTrue(length <= Length);
-            offset = length - bytesToOffset;
+            //if(length > Length)
+            //    UnityEngine.Debug.LogError($"RenderConstantBuffer: {length} out of {Length}");
+            
+            byteOffset = length - bytesToOffset;
 
             return CollectionHelper.ConvertExistingDataToNativeArray<byte>(
-                __bytes + offset, 
-                byteCount, 
+                __bytes + byteOffset, 
+                numBytes, 
                 Allocator.None,
                 true);
         }

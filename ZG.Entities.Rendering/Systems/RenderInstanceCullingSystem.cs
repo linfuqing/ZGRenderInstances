@@ -1110,6 +1110,7 @@ namespace ZG
                                     .TypeSize;
                                 
                                 destination = constantBuffers[renderChunk.constantTypeIndex].Write(
+                                    constantTypeStride, 
                                     cameraBatchChunk.count * constantTypeStride, 
                                     out renderChunk.constantByteOffset);
                             }
