@@ -38,6 +38,7 @@ namespace ZG
 
             var sprite = authoring.sprite;
             RenderSharedData renderSharedData;
+            renderSharedData.shader = material.shader;
             renderSharedData.material = material;
             if (SpritePackingMode.Tight == sprite.packingMode)
             {

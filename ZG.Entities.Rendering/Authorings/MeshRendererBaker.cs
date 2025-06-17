@@ -34,6 +34,7 @@ namespace ZG
             renderSharedData.subMeshIndex = subMeshStartIndex;
             renderSharedData.mesh = mesh;
             renderSharedData.material = material;
+            renderSharedData.shader = material.shader;
             baker.AddSharedComponent(entity, renderSharedData);
 
             RenderQueue renderQueue;
@@ -69,6 +70,7 @@ namespace ZG
                         material = materials[++materialIndex];
                         
                         renderSharedData.material = material;
+                        renderSharedData.shader = material.shader;
 
                         baker.AddSharedComponent(entityToRender, renderSharedData);
 

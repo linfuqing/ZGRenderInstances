@@ -39,7 +39,7 @@ namespace ZG
                 var materials = skinnedMeshRenderer.sharedMaterials;
                 
                 RenderSharedData sharedData;
-                sharedData.material = database.GetOrCreateMaterial(materials[0]);
+                //sharedData.material = database.GetOrCreateMaterial(materials[0]);
                 sharedData.mesh = skinnedMeshRenderer.sharedMesh;
                 MeshRendererBaker.Bake(baker, entity, skinnedMeshRenderer, sharedData.mesh, 0, (subMeshIndex, entity) =>
                 {
@@ -52,7 +52,9 @@ namespace ZG
                     baker.AddSharedComponent(entity, constantType);
 
                     sharedData.subMeshIndex = subMeshIndex;
-                    sharedData.material = database.GetOrCreateMaterial(materials[subMeshIndex]);
+                    var material = database.GetOrCreateMaterial(materials[subMeshIndex]);
+                    sharedData.material = material;
+                    sharedData.shader = material.shader;
                     baker.SetSharedComponent(entity, sharedData);
                 });
 

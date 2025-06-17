@@ -8,12 +8,12 @@ namespace ZG
 {
     public readonly struct RenderConstantBuffer : IBufferElementData
     {
-        private readonly int Alignment;
+        public readonly int Alignment;
 
-        private readonly int Stride;
+        public readonly int Stride;
 
-        private readonly int Index;
-        private readonly int Length;
+        public readonly int Index;
+        public readonly int Length;
         
         [NativeDisableUnsafePtrRestriction] 
         private readonly unsafe UnsafeList<int>* __byteOffset;

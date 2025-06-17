@@ -22,6 +22,7 @@ namespace ZG
         public int subMeshIndex;
         public UnityObjectRef<Mesh> mesh;
         public UnityObjectRef<Material> material;
+        public UnityObjectRef<Shader> shader;
 
         public bool Equals(RenderSharedData other)
         {
@@ -32,14 +33,18 @@ namespace ZG
 
         public int CompareTo(RenderSharedData other)
         {
-            int result = material.GetHashCode().CompareTo(other.material.GetHashCode());
+            int result = shader.GetHashCode().CompareTo(other.shader.GetHashCode());
             if (result == 0)
             {
-                result = mesh.GetHashCode().CompareTo(other.mesh.GetHashCode());
-                if(result == 0)
-                    result = subMeshIndex.CompareTo(other.subMeshIndex);
+                result = material.GetHashCode().CompareTo(other.material.GetHashCode());
+                if (result == 0)
+                {
+                    result = mesh.GetHashCode().CompareTo(other.mesh.GetHashCode());
+                    if (result == 0)
+                        result = subMeshIndex.CompareTo(other.subMeshIndex);
+                }
             }
-            
+
             return result;
         }
 
