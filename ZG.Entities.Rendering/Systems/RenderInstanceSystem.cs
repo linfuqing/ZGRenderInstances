@@ -723,6 +723,10 @@ namespace ZG
                 return false;
             }
 
+            var entityManager = __system.EntityManager;
+            entityManager.CompleteDependencyBeforeRO<RenderChunk>();
+            entityManager.CompleteDependencyBeforeRO<RenderLocalToWorld>();
+            
             if (isBegin)
                 End();
             else
@@ -731,7 +735,7 @@ namespace ZG
             __chunks.Update(__system);
             __localToWorlds.Update(__system);
 
-            var singleton = __system.EntityManager.GetComponentData<RenderSingleton>(__system.SystemHandle);
+            var singleton = entityManager.GetComponentData<RenderSingleton>(__system.SystemHandle);
 
             __renderLists.GetRefRW(entity).ValueRW.Apply(
                 singleton.sharedDatas.AsArray(), 
@@ -756,8 +760,8 @@ namespace ZG
             if (system == null)
                 return false;
             
-            if(system.__manager.isBegin)
-                system.CompleteDependency();
+            //if(system.__manager.isBegin)
+            //    system.CompleteDependency();
 
             return system.__manager.Apply(camera, commandBuffer);
         }
