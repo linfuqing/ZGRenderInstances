@@ -56,6 +56,10 @@ namespace ZG
                     sharedData.material = material;
                     sharedData.shader = material.shader;
                     baker.SetSharedComponent(entity, sharedData);
+                    
+                    RenderQueue renderQueue;
+                    renderQueue.value = (long)material.renderQueue << 32;
+                    baker.SetSharedComponent(entity, renderQueue);
                 });
 
                 return true;
