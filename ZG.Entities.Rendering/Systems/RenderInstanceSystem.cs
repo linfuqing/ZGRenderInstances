@@ -442,12 +442,12 @@ namespace ZG
                             chunk.constantByteOffset,
                             chunk.count * stride);
 
-                        if (stride == 64)
+                        if (stride == 64 && oldStride != 64)
                         {
-                            if (oldStride != 64)
-                                ++times;
-                            else if (times > 0)
+                            if (times > 0)
                                 Debug.LogError("WTF???");
+                            else
+                                ++times;
                         }
 
                         oldStride = stride;
