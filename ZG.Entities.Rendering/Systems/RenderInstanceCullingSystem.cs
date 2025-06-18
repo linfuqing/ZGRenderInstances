@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Unity.Burst;
 using Unity.Burst.Intrinsics;
@@ -691,11 +692,26 @@ namespace ZG
             }
         }
 
-        private struct CameraRenderList
+        private struct CameraRenderList : IComparable<CameraRenderList>, IEquatable<CameraRenderList>
         {
             public RenderList value;
 
             public int cameraBatchChunkIndex;
+
+            public int CompareTo(CameraRenderList other)
+            {
+                return cameraBatchChunkIndex.CompareTo(other.cameraBatchChunkIndex);
+            }
+
+            public bool Equals(CameraRenderList other)
+            {
+                return cameraBatchChunkIndex == other.cameraBatchChunkIndex;
+            }
+
+            public override int GetHashCode()
+            {
+                return cameraBatchChunkIndex;
+            }
         }
         
         [BurstCompile]
@@ -1010,7 +1026,7 @@ namespace ZG
 
         private struct Command
         {
-            private struct Comparer : System.Collections.Generic.IComparer<CameraRenderList>
+            /*private struct Comparer : System.Collections.Generic.IComparer<CameraRenderList>
             {
                 public NativeArray<CameraBatchChunk> cameraBatchChunks;
 
@@ -1019,7 +1035,7 @@ namespace ZG
                     return cameraBatchChunks[x.cameraBatchChunkIndex].value.value
                         .CompareTo(cameraBatchChunks[y.cameraBatchChunkIndex].value.value);
                 }
-            }
+            }*/
             
             public ConstantTypeArray constantTypeArray;
             
@@ -1052,9 +1068,9 @@ namespace ZG
                         renderLists.Add(temp);
                     } while (this.renderLists.TryGetNextValue(out temp, ref iterator));
 
-                    Comparer comparer;
-                    comparer.cameraBatchChunks = cameraBatchChunks;
-                    renderLists.AsArray().Sort(comparer);
+                    //Comparer comparer;
+                    //comparer.cameraBatchChunks = cameraBatchChunks;
+                    renderLists.AsArray().Sort();
                     
                     var renderLocalToWorlds = this.renderLocalToWorlds[index];
                     renderLocalToWorlds.Clear();
@@ -1204,7 +1220,7 @@ namespace ZG
             public NativeArray<RenderConstantType> constantTypes;
 
             [ReadOnly]
-            public NativeArray<CameraBatchChunk> cameraBatchChunks;
+            public NativeList<CameraBatchChunk> cameraBatchChunks;
 
             [ReadOnly]
             public NativeParallelMultiHashMap<Entity, CameraRenderList> renderLists;
@@ -1226,7 +1242,7 @@ namespace ZG
                 Command command;
                 command.constantTypes = constantTypes;
                 command.constantTypeArray = constantTypeArray;
-                command.cameraBatchChunks = cameraBatchChunks;
+                command.cameraBatchChunks = cameraBatchChunks.AsArray();
                 command.renderLists = renderLists;
                 command.localToWorldType = localToWorldType;
                 command.entityArray = chunk.GetNativeArray(entityType);
@@ -1398,10 +1414,8 @@ namespace ZG
                 __renderLists.Capacity, 
                 entityCount * cameraCount);
             
-            var cameraBatchChunks = __cameraBatchChunks.AsDeferredJobArray();
-
             Collect collect;
-            collect.cameraBatchChunks = cameraBatchChunks;
+            collect.cameraBatchChunks = __cameraBatchChunks.AsDeferredJobArray();
             collect.frustumPlanes = __frustumPlanes;
             collect.boundsWorldType = __boundsWorldType;
             collect.chunks = __chunks;
@@ -1417,7 +1431,7 @@ namespace ZG
             CommandEx command;
             command.constantTypeArray = __constantTypeArray;
             command.constantTypes = singleton.constantTypes.AsArray();
-            command.cameraBatchChunks = cameraBatchChunks;
+            command.cameraBatchChunks = __cameraBatchChunks;
             command.renderLists = __renderLists;
             command.localToWorldType = __localToWorldType;
             command.entityType = __entityType;

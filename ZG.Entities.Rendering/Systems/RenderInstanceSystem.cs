@@ -416,7 +416,7 @@ namespace ZG
             var computeBuffers = __GetComputeBuffers();
             RenderSharedData sharedData;
             RenderConstantType constantType;
-            int i, bufferID, count, stride, offset = 0;
+            int i, bufferID, count, stride, oldStride = 0, times = 0, offset = 0;
             foreach (var chunk in chunks)
             {
                 for (i = 0; i < chunk.count; i += count)
@@ -441,6 +441,16 @@ namespace ZG
                             bufferID,
                             chunk.constantByteOffset,
                             chunk.count * stride);
+
+                        if (stride == 64)
+                        {
+                            if (oldStride != 64)
+                                ++times;
+                            else if (times > 0)
+                                Debug.LogError("WTF???");
+                        }
+
+                        oldStride = stride;
                     }
 
                     NativeArray<Matrix4x4>.Copy(
