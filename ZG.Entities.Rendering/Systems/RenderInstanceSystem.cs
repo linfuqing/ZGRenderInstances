@@ -369,11 +369,14 @@ namespace ZG
                     computeBufferOffset = computeBufferIndex + numConstantTypes;
                     if (!constantBuffers[computeBufferOffset].isCreated)
                     {
-                        byteCount = __byteOffsets[computeBufferIndex + byteCountOffset];
-                        
 #if UNITY_WEBGL
+                        byteCount = __byteOffsets[computeBufferIndex + byteCountOffset];
+
                         bytes = __bytes.AsArray().GetSubArray(__byteOffsets[computeBufferIndex + numComputeBuffers], byteCount);
-#else 
+#else
+                        byteCount = ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride) *
+                                           stride;
+
                         computeBuffer = computeBuffers[computeBufferIndex];
 
                         bytes = computeBuffer.BeginWrite<byte>(
