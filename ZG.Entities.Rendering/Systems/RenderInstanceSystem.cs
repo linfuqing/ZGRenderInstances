@@ -180,7 +180,7 @@ namespace ZG
 
         public static int ComputeCount(int sharedDataCount, int constantTypeEntityCount, int alignment, int stride)
         {
-            int bytes = math.max(1, math.min(constantTypeEntityCount - 1, sharedDataCount)) * 
+            int bytes = (math.min(constantTypeEntityCount, sharedDataCount) - 1) * 
                         ((stride + alignment - 1) / alignment) * alignment;
 
             return (bytes + stride - 1) / stride + constantTypeEntityCount;
@@ -389,16 +389,25 @@ namespace ZG
             var computeBuffers = __GetComputeBuffers();
             if (computeBuffers != null)
             {
-                int numComputeBuffers = math.min(computeBuffers.Count, __byteOffsets.Length), byteOffset;
+                int alignment = SystemInfo.constantBufferOffsetAlignment, 
+                    numComputeBuffers = math.min(computeBuffers.Count, __byteOffsets.Length), 
+                    byteOffset, stride;
+                ComputeBuffer computeBuffer;
                 for (int i = 0; i < numComputeBuffers; ++i)
                 {
                     byteOffset = __byteOffsets[i];
-                    if(byteOffset >= 0)
+                    if (byteOffset >= 0)
+                    {
+                        computeBuffer = computeBuffers[i];
+                        stride = computeBuffer.stride;
+                        byteOffset = math.min(byteOffset, ComputeCount(__sharedDataCount, __constantTypeEntityCount, alignment, stride));
 #if UNITY_WEBGL
-                        computeBuffers[i].SetData(__bytes.AsArray().GetSubArray(__byteOffsets[i + numComputeBuffers], byteOffset));
+                        computeBuffer.SetData(__bytes.AsArray()
+                            .GetSubArray(__byteOffsets[i + numComputeBuffers], byteOffset));
 #else
-                        computeBuffers[i].EndWrite<byte>(byteOffset);
+                        computeBuffer.EndWrite<byte>(byteOffset);
 #endif
+                    }
                 }
             }
             
@@ -417,7 +426,7 @@ namespace ZG
             var computeBuffers = __GetComputeBuffers();
             RenderSharedData sharedData;
             RenderConstantType constantType;
-            int i, bufferID, count, stride, oldStride = 0, times = 0, offset = 0;
+            int i, bufferID, count, stride, offset = 0;
             foreach (var chunk in chunks)
             {
                 for (i = 0; i < chunk.count; i += count)
@@ -442,20 +451,6 @@ namespace ZG
                             bufferID,
                             chunk.constantByteOffset,
                             chunk.count * stride);
-
-                        if (stride == 64 && oldStride != 64)
-                        {
-                            if (times > 0)
-                                Debug.LogError("WTF???");
-                            else
-                                ++times;
-                        }
-
-                        oldStride = stride;
-                        
-                        
-                        if (stride == 64 && chunk.constantByteOffset != 0)
-                            UnityEngine.Debug.LogError("WTF Apply");
                     }
 
                     NativeArray<Matrix4x4>.Copy(

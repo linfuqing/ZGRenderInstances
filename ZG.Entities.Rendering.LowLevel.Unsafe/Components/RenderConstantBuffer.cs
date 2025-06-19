@@ -50,14 +50,12 @@ namespace ZG
             UnityEngine.Assertions.Assert.AreEqual(stride, Stride);
             int numBytes = stride * count, bytesToOffset = (numBytes + Alignment - 1) / Alignment * Alignment, 
                 length = Interlocked.Add(ref __byteOffset->ElementAt(Index), bytesToOffset);
-            UnityEngine.Assertions.Assert.IsTrue(length <= Length);
-            //if(length > Length)
-            //    UnityEngine.Debug.LogError($"RenderConstantBuffer: {length} out of {Length}");
             
             byteOffset = length - bytesToOffset;
 
-            if (stride == 64 && byteOffset != 0)
-                UnityEngine.Debug.LogError("WTF RCB");
+            UnityEngine.Assertions.Assert.IsFalse(byteOffset + numBytes > Length);
+            //if(length > Length)
+            //    UnityEngine.Debug.LogError($"RenderConstantBuffer: {length} out of {Length}");
 
             return CollectionHelper.ConvertExistingDataToNativeArray<byte>(
                 __bytes + byteOffset, 
