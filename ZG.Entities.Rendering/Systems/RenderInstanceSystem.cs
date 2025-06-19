@@ -452,6 +452,10 @@ namespace ZG
                         }
 
                         oldStride = stride;
+                        
+                        
+                        if (stride == 64 && chunk.constantByteOffset != 0)
+                            UnityEngine.Debug.LogError("WTF Apply");
                     }
 
                     NativeArray<Matrix4x4>.Copy(

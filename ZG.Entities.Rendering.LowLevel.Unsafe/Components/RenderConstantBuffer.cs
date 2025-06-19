@@ -56,6 +56,9 @@ namespace ZG
             
             byteOffset = length - bytesToOffset;
 
+            if (stride == 64 && byteOffset != 0)
+                UnityEngine.Debug.LogError("WTF RCB");
+
             return CollectionHelper.ConvertExistingDataToNativeArray<byte>(
                 __bytes + byteOffset, 
                 numBytes, 
