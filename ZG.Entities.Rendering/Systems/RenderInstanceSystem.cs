@@ -403,22 +403,28 @@ namespace ZG
             var computeBuffers = __GetComputeBuffers();
             if (computeBuffers != null)
             {
-                int alignment = SystemInfo.constantBufferOffsetAlignment, 
-                    numComputeBuffers = math.min(computeBuffers.Count, __byteOffsets.Length), 
+                int numComputeBuffers = math.min(computeBuffers.Count, __byteOffsets.Length), 
                     byteCountOffset = numComputeBuffers << 1, 
                     byteOffset;
+                ComputeBuffer computeBuffer;
                 for (int i = 0; i < numComputeBuffers; ++i)
                 {
                     byteOffset = __byteOffsets[i];
                     if (byteOffset >= 0)
                     {
+                        computeBuffer = computeBuffers[i];
+                        
+#if UNITY_WEBGL
                         byteOffset = math.min(byteOffset,
                             __byteOffsets[i + byteCountOffset]);
-#if UNITY_WEBGL
-                        computeBuffers[i].SetData(__bytes.AsArray()
+                        
+                        computeBuffer.SetData(__bytes.AsArray()
                             .GetSubArray(__byteOffsets[i + numComputeBuffers], byteOffset));
 #else
-                        computeBuffers[i].EndWrite<byte>(byteOffset);
+                        byteOffset = math.min(byteOffset,
+                            computeBuffer.count * computeBuffer.stride);
+
+                        computeBuffer.EndWrite<byte>(byteOffset);
 #endif
                     }
                 }
