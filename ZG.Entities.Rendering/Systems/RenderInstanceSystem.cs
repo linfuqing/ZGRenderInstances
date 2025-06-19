@@ -400,7 +400,8 @@ namespace ZG
                     {
                         computeBuffer = computeBuffers[i];
                         stride = computeBuffer.stride;
-                        byteOffset = math.min(byteOffset, ComputeCount(__sharedDataCount, __constantTypeEntityCount, alignment, stride));
+                        byteOffset = math.min(byteOffset,
+                            ComputeCount(__sharedDataCount, __constantTypeEntityCount, alignment, stride) * stride);
 #if UNITY_WEBGL
                         computeBuffer.SetData(__bytes.AsArray()
                             .GetSubArray(__byteOffsets[i + numComputeBuffers], byteOffset));
