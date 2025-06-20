@@ -828,10 +828,10 @@ namespace ZG
                     cameraBatchChunks.Add(cameraBatchChunk);
                 }
 
+                cameraBatchChunks.Sort();
                 int count = cameraBatchChunks.AsArray().Unique();
                 
                 cameraBatchChunks.ResizeUninitialized(count);
-                cameraBatchChunks.Sort();
             }
         }
 

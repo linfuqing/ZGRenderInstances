@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Burst;
 using Unity.Burst.Intrinsics;
 using Unity.Collections;
@@ -82,10 +83,9 @@ namespace ZG
 
             if (!__entities.IsEmpty)
             {
-                using (var names = __entities.GetKeyArray(Allocator.Temp))
                 using (var entities = new NativeList<Entity>(Allocator.Temp))
                 {
-                    int count = names.Unique();
+                    var (names, count) = __entities.GetUniqueKeyArray(Allocator.Temp);
                     FixedString128Bytes name;
                     for (int i = 0; i < count; ++i)
                     {
@@ -103,6 +103,8 @@ namespace ZG
                             //ref instanceIDs
                         );
                     }
+
+                    names.Dispose();
                 }
 
                 __entities.Clear();
@@ -117,6 +119,14 @@ namespace ZG
      UpdateAfter(typeof(MessageSystem))*/]
     public partial struct InstanceSystemUnmanaged : ISystem
     {
+        private struct Comparer : IComparer<EntityPrefabReference>
+        {
+            public int Compare(EntityPrefabReference x, EntityPrefabReference y)
+            {
+                return x.AssetGUID.CompareTo(y.AssetGUID);
+            }
+        }
+        
         private struct Save
         {
             [ReadOnly] public NativeArray<CopyMatrixToTransformInstanceID> ids;
@@ -329,6 +339,8 @@ namespace ZG
                 var prefabLoader = __prefabLoader.AsWriter();
                 using (var keys = __loaders.GetKeyArray(Allocator.Temp))
                 {
+                    keys.Sort(new Comparer());
+                    
                     NativeList<Entity> entities = default;
                     NativeList<RigidTransform> transforms = default;
                     Entity entity;
