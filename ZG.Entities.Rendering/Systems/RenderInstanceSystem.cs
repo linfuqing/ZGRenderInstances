@@ -317,11 +317,11 @@ namespace ZG
 #if UNITY_WEBGL
                 __byteOffsets.ResizeUninitialized(numComputeBuffers * 3);
 
+                int byteOffsetIndex = numComputeBuffers << 1;
                 for (i = 0; i < numComputeBuffers; ++i)
-                    __byteOffsets[i + numComputeBuffers] = -1;
+                    __byteOffsets[i + byteOffsetIndex] = -1;
 
                 byteCount = 0;
-                int byteCountOffset = numComputeBuffers << 1;
                 for (i = 0; i < numConstantTypes; ++i)
                 {
                     constantType = constantTypes[i];
@@ -331,12 +331,12 @@ namespace ZG
                         continue;
 
                     computeBufferIndex = __computeBufferStrideToIndices[stride];
-                    ref var currentByteOffset = ref __byteOffsets.ElementAt(computeBufferIndex + numComputeBuffers);
+                    ref var currentByteOffset = ref __byteOffsets.ElementAt(computeBufferIndex + byteOffsetIndex);
                     if (currentByteOffset < 0)
                     {
                         currentByteOffset = byteCount;
                         
-                        ref var currentByteCount = ref __byteOffsets.ElementAt(computeBufferIndex + byteCountOffset);
+                        ref var currentByteCount = ref __byteOffsets.ElementAt(computeBufferIndex + numComputeBuffers);
 
                         currentByteCount = ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride) *
                                            stride;
@@ -347,7 +347,7 @@ namespace ZG
                 
                 __bytes.ResizeUninitialized(byteCount);
 #else
-                __byteOffsets.ResizeUninitialized(numComputeBuffers);
+                __byteOffsets.ResizeUninitialized(numComputeBuffers << 1);
 #endif
                 for (i = 0; i < numComputeBuffers; ++i)
                     __byteOffsets[i] = -1;
@@ -370,12 +370,14 @@ namespace ZG
                     if (!constantBuffers[computeBufferOffset].isCreated)
                     {
 #if UNITY_WEBGL
-                        byteCount = __byteOffsets[computeBufferIndex + byteCountOffset];
+                        byteCount = __byteOffsets[computeBufferIndex + numComputeBuffers];
 
-                        bytes = __bytes.AsArray().GetSubArray(__byteOffsets[computeBufferIndex + numComputeBuffers], byteCount);
+                        bytes = __bytes.AsArray().GetSubArray(__byteOffsets[computeBufferIndex + byteOffsetIndex], byteCount);
 #else
                         byteCount = ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride) *
                                            stride;
+
+                        __byteOffsets[computeBufferIndex + numComputeBuffers] = byteCount;
 
                         computeBuffer = computeBuffers[computeBufferIndex];
 
@@ -404,27 +406,20 @@ namespace ZG
             if (computeBuffers != null)
             {
                 int numComputeBuffers = math.min(computeBuffers.Count, __byteOffsets.Length), 
-                    byteCountOffset = numComputeBuffers << 1, 
                     byteOffset;
-                ComputeBuffer computeBuffer;
                 for (int i = 0; i < numComputeBuffers; ++i)
                 {
                     byteOffset = __byteOffsets[i];
                     if (byteOffset >= 0)
                     {
-                        computeBuffer = computeBuffers[i];
-                        
-#if UNITY_WEBGL
                         byteOffset = math.min(byteOffset,
-                            __byteOffsets[i + byteCountOffset]);
-                        
-                        computeBuffer.SetData(__bytes.AsArray()
-                            .GetSubArray(__byteOffsets[i + numComputeBuffers], byteOffset));
-#else
-                        byteOffset = math.min(byteOffset,
-                            computeBuffer.count * computeBuffer.stride);
+                            __byteOffsets[i + numComputeBuffers]);
 
-                        computeBuffer.EndWrite<byte>(byteOffset);
+#if UNITY_WEBGL
+                        computeBuffers[i].SetData(__bytes.AsArray()
+                            .GetSubArray(__byteOffsets[i + (numComputeBuffers << 1)], byteOffset));
+#else
+                        computeBuffers[i].EndWrite<byte>(byteOffset);
 #endif
                     }
                 }
