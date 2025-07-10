@@ -254,9 +254,15 @@ namespace ZG
                     __instances = new List<InstancesToCreate>();
                 }
 
+                ~System()
+                {
+                    Dispose();
+                }
+
                 public void Dispose()
                 {
-                    __entities.Dispose();
+                    if(__entities.IsCreated)
+                        __entities.Dispose();
 
                     foreach (var instance in __instances)
                     {
