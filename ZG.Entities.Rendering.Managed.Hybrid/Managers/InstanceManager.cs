@@ -148,12 +148,17 @@ namespace ZG
                         }
 
                         entity = entities[index];
-                        if (entityManager.IsEnabled(entity) &&
-                            entityManager.HasComponent<ZG.Instance>(entity) &&
-                            //entityManager.IsComponentEnabled<global::Instance>(entity) && 
-                            gameObjects[index] != null)
-                            continue;
-
+                        if (entityManager.HasComponent<ZG.Instance>(entity))
+                        {
+                            if (entityManager.IsEnabled(entity))
+                            {
+                                if (gameObjects[index] != null)
+                                    continue;
+                            }
+                            else
+                                entityManager.SetComponentEnabled<ZG.Instance>(entity, true);
+                        }
+                        
                         __Destroy(gameObjects[index], instance.instanceID);
 
                         gameObjects.RemoveAt(index);
