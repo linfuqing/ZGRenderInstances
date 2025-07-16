@@ -38,14 +38,14 @@ namespace ZG
         
         public static int GetNodeCount(int depth)
         {
-            ++depth;
+            //++depth;
 
             return (((1 << (depth + depth)) - 1) & 0x15555);
         }
 
         public static int GetNodeStartIndexFromLevel(int level, int depth)
         {
-            return (((1 << (level + level)) - 1) & 0x5555) + GetNodeCount(depth);
+            return ((1 << (level + level)) - 1) & 0x5555; // + GetNodeCount(depth);
         }
         
         public static int GetNodeIndexFromLevelXY(int x, int y, int level, int depth)
@@ -74,7 +74,7 @@ namespace ZG
                 bitPattern = math.max(patternX, patternY),
                 highBit = bitPattern <= byte.MaxValue ? (32 - math.lzcnt((uint)bitPattern)) : MAX_DEPTH;
 
-            level = math.min(MAX_DEPTH - highBit, depth);
+            level = math.min(MAX_DEPTH - highBit, depth - 1);
             
             int shift = MAX_DEPTH - level;
 
