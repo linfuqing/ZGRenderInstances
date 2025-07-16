@@ -25,7 +25,7 @@ namespace ZG
             [FieldOffset(4)]
             public int worldFlag;
             [FieldOffset(8)]
-            public v128 entityIndices;
+            public v128 entityMask;
         }
 
         public FixedList512Bytes<Node> nodes;
@@ -43,18 +43,18 @@ namespace ZG
             return (((1 << (depth + depth)) - 1) & 0x15555);
         }
 
-        public static int GetNodeStartIndexFromLevel(int level, int depth)
+        public static int GetNodeStartIndexFromLevel(int level)
         {
-            return ((1 << (level + level)) - 1) & 0x5555; // + GetNodeCount(depth);
+            return ((1 << (level + level)) - 1) & 0x5555;
         }
         
-        public static int GetNodeIndexFromLevelXY(int x, int y, int level, int depth)
+        public static int GetNodeIndexFromLevelXY(int x, int y, int level)
         {
             /*int count = 1 << level;
             if (x >= count || y >= count)
                 return -1;*/
 
-            int nodeStartIndex = GetNodeStartIndexFromLevel(level, depth);
+            int nodeStartIndex = GetNodeStartIndexFromLevel(level);
             
             return nodeStartIndex + ((y << level) + x);
         }
@@ -135,21 +135,21 @@ namespace ZG
                 out int x, 
                 out int y);
 
-            int nodeIndex = GetNodeIndexFromLevelXY(x, y, level, DEPTH);
+            int nodeIndex = GetNodeIndexFromLevelXY(x, y, level);
             
             ref var node = ref nodes.ElementAt(nodeIndex);
 
             if (entityIndex < 64)
-                node.entityIndices.ULong0 |= 1UL << entityIndex;
+                node.entityMask.ULong0 |= 1UL << entityIndex;
             else
-                node.entityIndices.ULong1 |= 1UL << (entityIndex - 64);
+                node.entityMask.ULong1 |= 1UL << (entityIndex - 64);
 
             node.localFlag |= flag;
             node.worldFlag |= flag;
 
             while (level > 0)
             {
-                nodeIndex = GetNodeIndexFromLevelXY(x >>= 1, y >>= 1, --level, DEPTH);
+                nodeIndex = GetNodeIndexFromLevelXY(x >>= 1, y >>= 1, --level);
 
                 nodes.ElementAt(nodeIndex).worldFlag |= flag;
             }
@@ -176,7 +176,6 @@ namespace ZG
             bool isNextLevel;
             int level = 0, shift, currentMinX, currentMaxX, currentMinY, currentMaxY, nodeIndex, i, j, k;
             ChunkEntityEnumerator enumerator;
-            MinMaxAABB worldAABB;
             do
             {
                 isNextLevel = false;
@@ -190,40 +189,40 @@ namespace ZG
                 {
                     for (i = currentMinX; i <= currentMaxX; ++i)
                     {
-                        nodeIndex = GetNodeIndexFromLevelXY(i, j, level, DEPTH);
+                        nodeIndex = GetNodeIndexFromLevelXY(i, j, level);
 
                         ref readonly var node = ref nodes.ElementAt(nodeIndex);
 
-                        if ((node.worldFlag & flag) != 0)
+                        if ((node.worldFlag & flag) == 0)
+                            continue;
+                        
+                        isNextLevel = true;
+                        
+                        if (j == currentMinY || j == currentMaxY || i == currentMinX || i == currentMaxX)
                         {
-                            isNextLevel = true;
-                            
-                            if (j == currentMinY || j == currentMaxY || i == currentMinX || i == currentMaxX)
+                            enumerator = new ChunkEntityEnumerator(true, node.entityMask, bounds.Length);
+                            while (enumerator.NextEntityIndex(out k))
                             {
-                                enumerator = new ChunkEntityEnumerator(true, node.entityIndices, bounds.Length);
-                                while (enumerator.NextEntityIndex(out k))
-                                {
-                                    if(!bounds[k].aabb.Overlaps(aabb))
-                                        continue;
-                                    
-                                    if (k < 64)
-                                        result.ULong0 |= 1UL << k;
-                                    else
-                                        result.ULong1 |= 1UL << (k - 64);
-                                }
+                                if(!bounds[k].aabb.Overlaps(aabb))
+                                    continue;
+                                
+                                if (k < 64)
+                                    result.ULong0 |= 1UL << k;
+                                else
+                                    result.ULong1 |= 1UL << (k - 64);
                             }
-                            else
-                            {
-                                result.ULong0 |= node.entityIndices.ULong0;
-                                result.ULong1 |= node.entityIndices.ULong1;
-                            }
+                        }
+                        else
+                        {
+                            result.ULong0 |= node.entityMask.ULong0;
+                            result.ULong1 |= node.entityMask.ULong1;
                         }
                     }
                 }
 
                 ++level;
             }
-            while (isNextLevel && level <= DEPTH);
+            while (isNextLevel && level < DEPTH);
 
             return result;
         }

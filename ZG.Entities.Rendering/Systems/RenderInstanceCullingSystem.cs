@@ -745,6 +745,9 @@ namespace ZG
                     
                     boundsWorld[i] = renderBoundsWorld;
                 }
+
+                if (!math.all(aabb.Max > aabb.Min))
+                    return;
                 
                 var boundsWorldChunk = new RenderBoundsWorldChunk(aabb);
                 iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
