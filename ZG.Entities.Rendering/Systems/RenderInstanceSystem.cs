@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Mathematics.Geometry;
 using UnityEngine;
 using UnityEngine.Rendering;
 using Plane = UnityEngine.Plane;
@@ -12,7 +13,7 @@ namespace ZG
     /// <summary>
     /// Represents frustum planes.
     /// </summary>
-    public struct RenderFrustumPlanes : IComponentData
+    public readonly struct RenderFrustumPlanes : IComponentData
     {
         /// <summary>
         /// Options for an intersection result.
@@ -35,12 +36,14 @@ namespace ZG
             Partial
         };
 
-        private float4 __0;
-        private float4 __1;
-        private float4 __2;
-        private float4 __3;
-        private float4 __4;
-        private float4 __5;
+        private readonly float4 __0;
+        private readonly float4 __1;
+        private readonly float4 __2;
+        private readonly float4 __3;
+        private readonly float4 __4;
+        private readonly float4 __5;
+
+        public readonly MinMaxAABB AABB;
 
         public float4 this[int index]
         {
@@ -83,11 +86,17 @@ namespace ZG
 
             // Near Plane
             Planes[4].SetNormalAndPosition(viewDir, eyePos);
-            Planes[4].distance -= camera.nearClipPlane;
+            
+            float ncp = camera.nearClipPlane;
+            
+            Planes[4].distance -= ncp;
 
             // Far plane
             Planes[5].SetNormalAndPosition(-viewDir, eyePos);
-            Planes[5].distance += camera.farClipPlane;
+            
+            float fcp = camera.farClipPlane;  
+
+            Planes[5].distance += fcp;
 
             __0 = new float4(
                 Planes[0].normal.x,
@@ -124,6 +133,35 @@ namespace ZG
                 Planes[5].normal.y,
                 Planes[5].normal.z,
                 Planes[5].distance);
+            
+            float yf = math.tan(camera.fieldOfView/2 * Mathf.Deg2Rad), xf = yf * camera.aspect;
+            Matrix4x4 l2w = camera.transform.localToWorldMatrix;
+            Vector3 f0 = l2w * new Vector3(-xf, -yf, 1), 
+                f1 = l2w * new Vector3(-xf,  yf, 1), 
+                f2 = l2w * new Vector3( xf, -yf, 1), 
+                f3 = l2w * new Vector3( xf,  yf, 1), 
+                cpt = l2w.GetPosition(), 
+                farLeftBottom = cpt + fcp * f0, 
+                farLeftTop = cpt + fcp * f1, 
+                farRightBottom = cpt + fcp * f2, 
+                farRightTop = cpt + fcp * f3, 
+                nearLeftBottom = cpt + ncp * f0, 
+                nearLeftTop = cpt + ncp * f1, 
+                nearRightBottom = cpt + ncp * f2, 
+                nearRightTop = cpt + ncp * f3; 
+            
+            AABB = MinMaxAABB.CreateFromCenterAndExtents(
+                (float3)(farLeftBottom + farLeftTop + farRightBottom + farRightTop + nearLeftBottom + nearLeftTop + nearRightBottom + nearRightTop) / 8.0f, 
+                float3.zero);
+            
+            AABB.Encapsulate(farLeftBottom);
+            AABB.Encapsulate(farLeftTop);
+            AABB.Encapsulate(farRightBottom);
+            AABB.Encapsulate(farRightTop);
+            AABB.Encapsulate(nearLeftBottom);
+            AABB.Encapsulate(nearLeftTop);
+            AABB.Encapsulate(nearRightBottom);
+            AABB.Encapsulate(nearRightTop);
         }
 
         public float DepthOf(in float3 point)

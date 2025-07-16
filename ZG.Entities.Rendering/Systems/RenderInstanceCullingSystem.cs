@@ -649,7 +649,7 @@ namespace ZG
                 return value.GetHashCode();
             }
         }
-
+        
         private struct RenderList
         {
             public struct Value
@@ -730,8 +730,7 @@ namespace ZG
             public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask,
                 in v128 chunkEnabledMask)
             {
-                RenderBoundsWorldChunk renderBoundsWorldChunk;
-                renderBoundsWorldChunk.aabb = new MinMaxAABB(float.MaxValue, float.MinValue);
+                var aabb = new MinMaxAABB(float.MaxValue, float.MinValue);
 
                 var localToWorlds = chunk.GetNativeArray(ref localToWorldType);
                 var bounds = chunk.GetNativeArray(ref boundsType);
@@ -742,12 +741,17 @@ namespace ZG
                 {
                     renderBoundsWorld.aabb = Math.Transform(localToWorlds[i].Value, bounds[i].aabb);
                     
-                    renderBoundsWorldChunk.aabb.Encapsulate(renderBoundsWorld.aabb);
+                    aabb.Encapsulate(renderBoundsWorld.aabb);
                     
                     boundsWorld[i] = renderBoundsWorld;
                 }
                 
-                chunk.SetChunkComponentData(ref boundsWorldChunkType, renderBoundsWorldChunk);
+                var boundsWorldChunk = new RenderBoundsWorldChunk(aabb);
+                iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
+                while (iterator.NextEntityIndex(out int i))
+                    boundsWorldChunk.Add(i, boundsWorld[i].aabb);
+                
+                chunk.SetChunkComponentData(ref boundsWorldChunkType, boundsWorldChunk);
             }
         }
 
@@ -760,8 +764,8 @@ namespace ZG
             [ReadOnly] 
             public NativeHashMap<RenderConstantType, int> constantTypeIndices;
             
-            [ReadOnly] 
-            public ComponentLookup<RenderFrustumPlanes> frustumPlanes;
+            //[ReadOnly] 
+            //public ComponentLookup<RenderFrustumPlanes> frustumPlanes;
 
             [ReadOnly] 
             public NativeArray<Entity> cameraEntities;
@@ -775,8 +779,8 @@ namespace ZG
             [ReadOnly] 
             public SharedComponentTypeHandle<RenderQueue> renderQueueType;
             
-            [ReadOnly] 
-            public ComponentTypeHandle<RenderBoundsWorldChunk> boundsWorldChunkType;
+            //[ReadOnly] 
+            //public ComponentTypeHandle<RenderBoundsWorldChunk> boundsWorldChunkType;
             
             public NativeParallelMultiHashMap<CameraBatch, ArchetypeChunk>.ParallelWriter chunks;
 
@@ -790,17 +794,17 @@ namespace ZG
 
                 cameraBatch.value.renderQueue = chunk.Has(renderQueueType) ? chunk.GetSharedComponent(renderQueueType).value : 0L;
 
-                MinMaxAABB aabb;
-                RenderFrustumPlanes frustumPlanes;
+                //RenderBoundsWorldChunk boundsWorldChunk;
+                //RenderFrustumPlanes frustumPlanes;
                 foreach (var cameraEntity in cameraEntities)
                 {
-                    if (!this.frustumPlanes.TryGetComponent(cameraEntity, out frustumPlanes))
+                    /*if (!this.frustumPlanes.TryGetComponent(cameraEntity, out frustumPlanes))
                         continue;
 
-                    aabb = chunk.GetChunkComponentData(ref boundsWorldChunkType).aabb;
+                    boundsWorldChunk = chunk.GetChunkComponentData(ref boundsWorldChunkType);
                     if (RenderFrustumPlanes.IntersectResult.Out ==
-                        frustumPlanes.Intersect(aabb.Center, aabb.Extents))
-                        continue;
+                        frustumPlanes.Intersect(boundsWorldChunk.aabb.Center, boundsWorldChunk.aabb.Extents))
+                        continue;*/
                     
                     cameraBatch.entity = cameraEntity;
                     chunks.Add(cameraBatch, chunk);
@@ -864,7 +868,10 @@ namespace ZG
 
             [ReadOnly] 
             public ComponentTypeHandle<RenderBoundsWorld> boundsWorldType;
-
+            
+            [ReadOnly] 
+            public ComponentTypeHandle<RenderBoundsWorldChunk> boundsWorldChunkType;
+            
             [ReadOnly] 
             public NativeParallelMultiHashMap<CameraBatch, ArchetypeChunk> chunks;
 
@@ -883,24 +890,34 @@ namespace ZG
 
             private int __CullingWithoutSort(int cameraBatchChunkIndex, in CameraBatch cameraBatch)
             {
-                NativeArray<RenderBoundsWorld> boundsWorld;
-                MinMaxAABB worldAABB;
-                int i, count, renderIndex = 0;
+                int renderIndex = 0;
                 if (chunks.TryGetFirstValue(cameraBatch, out var chunk, out var iterator))
                 {
                     if (!this.frustumPlanes.TryGetComponent(cameraBatch.entity, out var frustumPlanes))
                         return 0;
 
+                    int i;
+                    v128 mask;
+                    MinMaxAABB worldAABB;
+                    ChunkEntityEnumerator enumerator;
+                    RenderBoundsWorldChunk boundsWorldChunk;
+                    NativeArray<RenderBoundsWorld> boundsWorld;
                     CameraRenderList renderList;
                     renderList.cameraBatchChunkIndex = cameraBatchChunkIndex;
                     do
                     {
+                        boundsWorldChunk = chunk.GetChunkComponentData(ref boundsWorldChunkType);
+                        if (RenderFrustumPlanes.IntersectResult.Out ==
+                            frustumPlanes.Intersect(boundsWorldChunk.aabb.Center, boundsWorldChunk.aabb.Extents))
+                            continue;
+                        
                         renderList.value = new RenderList(chunk);
                         
                         boundsWorld = chunk.GetNativeArray(ref boundsWorldType);
 
-                        count = chunk.Count;
-                        for (i = 0; i < count; ++i)
+                        mask = boundsWorldChunk.Search(boundsWorldChunk.aabb, boundsWorld);
+                        enumerator = new ChunkEntityEnumerator(true, mask, chunk.Count);
+                        while(enumerator.NextEntityIndex(out i))
                         {
                             worldAABB = boundsWorld[i].aabb;
                             if (RenderFrustumPlanes.IntersectResult.Out ==
@@ -928,19 +945,28 @@ namespace ZG
                     if (!this.frustumPlanes.TryGetComponent(cameraBatch.entity, out var frustumPlanes))
                         return 0;
                     
-                    NativeList<Entry> entries = default;
-                    Entry entry;
-                    NativeArray<RenderBoundsWorld> boundsWorld;
+                    int i;
+                    v128 mask;
                     MinMaxAABB worldAABB;
-                    int i, count;
+                    Entry entry;
+                    ChunkEntityEnumerator enumerator;
+                    RenderBoundsWorldChunk boundsWorldChunk;
+                    NativeArray<RenderBoundsWorld> boundsWorld;
+                    NativeList<Entry> entries = default;
                     do
                     {
+                        boundsWorldChunk = chunk.GetChunkComponentData(ref boundsWorldChunkType);
+                        if (RenderFrustumPlanes.IntersectResult.Out ==
+                            frustumPlanes.Intersect(boundsWorldChunk.aabb.Center, boundsWorldChunk.aabb.Extents))
+                            continue;
+
                         entry.chunk = chunk;
 
                         boundsWorld = chunk.GetNativeArray(ref boundsWorldType);
 
-                        count = chunk.Count;
-                        for (i= 0; i < count; ++i)
+                        mask = boundsWorldChunk.Search(boundsWorldChunk.aabb, boundsWorld);
+                        enumerator = new ChunkEntityEnumerator(true, mask, chunk.Count);
+                        while(enumerator.NextEntityIndex(out i))
                         {
                             worldAABB = boundsWorld[i].aabb;
                             if (RenderFrustumPlanes.IntersectResult.Out ==
@@ -1392,14 +1418,12 @@ namespace ZG
             Culling culling;
             culling.sharedDataIndices = singleton.sharedDataIndices;
             culling.constantTypeIndices = singleton.constantTypeIndices;
-            culling.frustumPlanes = __frustumPlanes;
             culling.cameraEntities =
                 __groupToCommand.ToEntityListAsync(state.WorldUpdateAllocator, out var commandEntitiesJobHandle)
                     .AsDeferredJobArray();
             culling.sharedDataType = __sharedDataType;
             culling.constantType = __constantType;
             culling.renderQueueType = __renderQueueType;
-            culling.boundsWorldChunkType = __boundsWorldChunkType;
             culling.chunks = __chunks.AsParallelWriter();
             jobHandle = culling.ScheduleParallelByRef(__groupToCulling,
                 JobHandle.CombineDependencies(commandEntitiesJobHandle, jobHandle));
@@ -1418,6 +1442,7 @@ namespace ZG
             collect.cameraBatchChunks = __cameraBatchChunks.AsDeferredJobArray();
             collect.frustumPlanes = __frustumPlanes;
             collect.boundsWorldType = __boundsWorldType;
+            collect.boundsWorldChunkType = __boundsWorldChunkType;
             collect.chunks = __chunks;
             collect.renderLists = __renderLists.AsParallelWriter();
             jobHandle = collect.ScheduleByRef(__cameraBatchChunks, InnerloopBatchCount, jobHandle);
