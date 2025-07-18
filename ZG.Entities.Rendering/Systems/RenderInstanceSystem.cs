@@ -135,12 +135,12 @@ namespace ZG
                 Planes[5].distance);
             
             float yf = math.tan(camera.fieldOfView/2 * Mathf.Deg2Rad), xf = yf * camera.aspect;
-            Matrix4x4 l2w = camera.transform.localToWorldMatrix;
-            Vector3 f0 = l2w * new Vector3(-xf, -yf, 1), 
-                f1 = l2w * new Vector3(-xf,  yf, 1), 
-                f2 = l2w * new Vector3( xf, -yf, 1), 
-                f3 = l2w * new Vector3( xf,  yf, 1), 
-                cpt = l2w.GetPosition(), 
+            Matrix4x4 localToWorld = camera.transform.localToWorldMatrix;
+            Vector3 f0 = localToWorld * new Vector3(-xf, -yf, 1), 
+                f1 = localToWorld * new Vector3(-xf,  yf, 1), 
+                f2 = localToWorld * new Vector3( xf, -yf, 1), 
+                f3 = localToWorld * new Vector3( xf,  yf, 1), 
+                cpt = localToWorld.GetPosition(), 
                 farLeftBottom = cpt + fcp * f0, 
                 farLeftTop = cpt + fcp * f1, 
                 farRightBottom = cpt + fcp * f2, 

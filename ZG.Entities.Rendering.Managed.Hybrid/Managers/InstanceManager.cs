@@ -775,7 +775,11 @@ namespace ZG
 
             int numPrefabs = _prefabs.Length;
             for (int i = 0; i < numPrefabs; ++i)
+            {
+                UnityEngine.Assertions.Assert.IsNull(_prefabs[i].gameObject.GetComponentInChildren<Collider>(),_prefabs[i].name);
+
                 __prefabIndices.Add(_prefabs[i].name, (this, i));
+            }
         }
 
         void OnDisable()
