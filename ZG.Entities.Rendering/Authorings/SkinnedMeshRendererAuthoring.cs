@@ -23,7 +23,7 @@ namespace ZG
                         out var skin,
                         out int rendererIndex))
                 {
-                    Debug.LogError($"Cannot find skinned mesh renderer {skinnedMeshRenderer.name}.", skinnedMeshRenderer);
+                    Debug.LogError($"Cannot find skinned mesh renderer {skinnedMeshRenderer.transform.root.name}.", skinnedMeshRenderer);
 
                     return false;
                 }
