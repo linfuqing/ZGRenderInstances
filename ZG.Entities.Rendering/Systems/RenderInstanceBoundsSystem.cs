@@ -139,10 +139,7 @@ namespace ZG
             
             ref var node = ref nodes.ElementAt(nodeIndex);
 
-            if (entityIndex < 64)
-                node.entityMask.ULong0 |= 1UL << entityIndex;
-            else
-                node.entityMask.ULong1 |= 1UL << (entityIndex - 64);
+            node.entityMask = __Or(node.entityMask, 1 << entityIndex);
 
             node.localFlag |= flag;
             node.worldFlag |= flag;
@@ -206,17 +203,11 @@ namespace ZG
                                 if(!bounds[k].aabb.Overlaps(aabb))
                                     continue;
                                 
-                                if (k < 64)
-                                    result.ULong0 |= 1UL << k;
-                                else
-                                    result.ULong1 |= 1UL << (k - 64);
+                                result = __Or(result, 1 << k);
                             }
                         }
                         else
-                        {
-                            result.ULong0 |= node.entityMask.ULong0;
-                            result.ULong1 |= node.entityMask.ULong1;
-                        }
+                            result = __Or(result, node.entityMask);
                     }
                 }
 
@@ -225,6 +216,16 @@ namespace ZG
             while (isNextLevel && level < DEPTH);
 
             return result;
+        }
+
+        private static v128 __Or(in v128 a, in v128 b)
+        {
+            return new v128(a.ULong0 | b.ULong0,  a.ULong1 | b.ULong1);
+        }
+        
+        private static v128 __Or(in v128 a, int b)
+        {
+            return __Or(a, new v128(b));
         }
     }
 

@@ -199,7 +199,7 @@ namespace ZG
     public struct RenderList : IComponentData
     {
         public const int MAX_INSTANCE_COUNT = 1023;
-        public const int MIN_COMPUTE_BUFFER_COUNT = MAX_INSTANCE_COUNT * 32;
+        public const int MIN_COMPUTE_BUFFER_COUNT = MAX_INSTANCE_COUNT * 4;
         public static readonly Matrix4x4[] Matrices = new Matrix4x4[MAX_INSTANCE_COUNT];
         public static readonly Dictionary<int, List<ComputeBuffer>> ComputeBuffers = new Dictionary<int, List<ComputeBuffer>>();
 
