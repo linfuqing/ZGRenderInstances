@@ -469,8 +469,8 @@ namespace ZG
             }
         }
 
-        [SerializeField] [UnityEngine.Serialization.FormerlySerializedAs("_onCount")]
-        internal StringEvent _onAcitveCount;
+        [SerializeField] [UnityEngine.Serialization.FormerlySerializedAs("_onAcitveCount")]
+        internal StringEvent _onActiveCount;
 
         //public UnityEngine.Object TEMP;
         [SerializeField] internal Prefab[] _prefabs;
@@ -728,8 +728,8 @@ namespace ZG
         {
             --activeCount;
 
-            if (_onAcitveCount != null)
-                _onAcitveCount.Invoke(activeCount.ToString());
+            if (_onActiveCount != null)
+                _onActiveCount.Invoke(activeCount.ToString());
 
             var transform = Resources.InstanceIDToObject(instanceID) as Transform;
             var gameObject = transform == null ? null : transform.gameObject;
@@ -776,7 +776,8 @@ namespace ZG
             int numPrefabs = _prefabs.Length;
             for (int i = 0; i < numPrefabs; ++i)
             {
-                UnityEngine.Assertions.Assert.IsNull(_prefabs[i].gameObject.GetComponentInChildren<Collider>(),_prefabs[i].name);
+                UnityEngine.Assertions.Assert.IsNotNull(_prefabs[i].gameObject, _prefabs[i].name);
+                UnityEngine.Assertions.Assert.IsNull(_prefabs[i].gameObject.GetComponentInChildren<Collider>(true), _prefabs[i].name);
 
                 __prefabIndices.Add(_prefabs[i].name, (this, i));
             }
