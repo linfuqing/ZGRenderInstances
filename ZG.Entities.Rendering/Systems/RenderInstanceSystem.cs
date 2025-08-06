@@ -198,7 +198,8 @@ namespace ZG
 
     public struct RenderList : IComponentData
     {
-        public const int MAX_INSTANCE_COUNT = 1023;
+        //https://discussions.unity.com/t/gpu-instancing-limited-to-128-per-call-on-adreno-540/737547
+        public const int MAX_INSTANCE_COUNT = 128;
         public const int MIN_COMPUTE_BUFFER_COUNT = MAX_INSTANCE_COUNT * 4;
         public static readonly Matrix4x4[] Matrices = new Matrix4x4[MAX_INSTANCE_COUNT];
         public static readonly Dictionary<int, List<ComputeBuffer>> ComputeBuffers = new Dictionary<int, List<ComputeBuffer>>();
@@ -476,9 +477,10 @@ namespace ZG
             End();
             
             var computeBuffers = __GetComputeBuffers();
+            ComputeBuffer computeBuffer = null;
             RenderSharedData sharedData;
             RenderConstantType constantType;
-            int i, bufferID, count, stride, offset = 0;
+            int i, count, stride = 0, offset = 0, bufferID = 0, constantTypeIndex = -1;
             foreach (var chunk in chunks)
             {
                 for (i = 0; i < chunk.count; i += count)
@@ -487,22 +489,33 @@ namespace ZG
 
                     if (chunk.constantTypeIndex != -1)
                     {
-                        constantType = constantTypes[chunk.constantTypeIndex];
-                        if (!__bufferIDs.TryGetValue(constantType.bufferName, out bufferID))
+                        if (chunk.constantTypeIndex != constantTypeIndex)
                         {
-                            bufferID = Shader.PropertyToID(constantType.bufferName.ToString());
+                            constantTypeIndex = chunk.constantTypeIndex;
                             
-                            __bufferIDs[constantType.bufferName] = bufferID;
+                            constantType = constantTypes[constantTypeIndex];
+                            if (!__bufferIDs.TryGetValue(constantType.bufferName, out bufferID))
+                            {
+                                bufferID = Shader.PropertyToID(constantType.bufferName.ToString());
+
+                                __bufferIDs[constantType.bufferName] = bufferID;
+                            }
+
+                            UnityEngine.Assertions.Assert.AreEqual(0,
+                                chunk.constantByteOffset % SystemInfo.constantBufferOffsetAlignment);
+
+                            stride = TypeManager
+                                .GetTypeInfo(TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash))
+                                .TypeSize;
+
+                            computeBuffer = computeBuffers[__computeBufferStrideToIndices[stride]];
                         }
-                        
-                        UnityEngine.Assertions.Assert.AreEqual(0, chunk.constantByteOffset % SystemInfo.constantBufferOffsetAlignment);
-                        
-                        stride = TypeManager.GetTypeInfo(TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash)).TypeSize;
+
                         commandBuffer.SetGlobalConstantBuffer(
-                            computeBuffers[__computeBufferStrideToIndices[stride]],
+                            computeBuffer,
                             bufferID,
-                            chunk.constantByteOffset,
-                            chunk.count * stride);
+                            chunk.constantByteOffset + i * stride,
+                            count * stride);
                     }
 
                     NativeArray<Matrix4x4>.Copy(
