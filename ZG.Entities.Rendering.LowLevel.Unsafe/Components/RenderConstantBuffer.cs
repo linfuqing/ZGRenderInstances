@@ -6,6 +6,19 @@ using Unity.Entities;
 
 namespace ZG
 {
+    public readonly struct RenderConstantBufferSegment
+    {
+        public readonly int Length;
+        public readonly unsafe byte* Bytes;
+        
+        public unsafe RenderConstantBufferSegment(ref NativeArray<byte> bytes)
+        {
+            Length = bytes.Length;
+
+            Bytes = (byte*)bytes.GetUnsafePtr();
+        }
+    }
+    
     public readonly struct RenderConstantBuffer : IBufferElementData
     {
         public readonly int Alignment;

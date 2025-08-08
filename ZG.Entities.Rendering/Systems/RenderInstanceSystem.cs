@@ -199,9 +199,9 @@ namespace ZG
     public struct RenderList : IComponentData
     {
         //https://discussions.unity.com/t/gpu-instancing-limited-to-128-per-call-on-adreno-540/737547
-        public const int MAX_INSTANCE_COUNT = 128;
-        public const int MIN_COMPUTE_BUFFER_COUNT = MAX_INSTANCE_COUNT * 4;
-        public static readonly Matrix4x4[] Matrices = new Matrix4x4[MAX_INSTANCE_COUNT];
+        public static readonly int MaxInstanceCount = 64;//SystemInfo.maxConstantBufferSize / 128;
+        public static readonly int MinComputeBufferCount = MaxInstanceCount * 4;
+        public static readonly Matrix4x4[] Matrices = new Matrix4x4[MaxInstanceCount];
         public static readonly Dictionary<int, List<ComputeBuffer>> ComputeBuffers = new Dictionary<int, List<ComputeBuffer>>();
 
         public readonly int InstanceID;
@@ -221,7 +221,7 @@ namespace ZG
         {
             int bytes = (math.min(constantTypeEntityCount, sharedDataCount) - 1) * 
                         ((stride + alignment - 1) / alignment) * alignment;
-
+            
             return (bytes + stride - 1) / stride + constantTypeEntityCount;
             //return constantTypeEntityCount + (sharedDataCount * alignment + stride - 1) / stride;
             //return math.max(constantTypeEntityCount, (alignment + stride - 1) / stride) * sharedDataCount;
@@ -309,7 +309,7 @@ namespace ZG
                             continue;
 
                         count = ComputeCount(__sharedDataCount, __constantTypeEntityCount, alignment, stride);
-                        count = Mathf.Max(count, MIN_COMPUTE_BUFFER_COUNT);
+                        count = Mathf.Max(count, MinComputeBufferCount);
                         if (__computeBufferStrideToIndices.TryGetValue(stride, out computeBufferIndex))
                         {
                             computeBuffer = computeBuffers[computeBufferIndex];
@@ -325,7 +325,8 @@ namespace ZG
                             __computeBufferStrideToIndices[stride] = computeBufferIndex;
                         }
 
-                        Debug.Log($"Create ComputeBuffer(Count: {count}, Stride: {stride})");
+                        Debug.Log(
+                            $"Create ComputeBuffer(Count: {count}, Stride: {stride}, Alignment: {alignment}, Constant Type Entity Count: {__constantTypeEntityCount}, Shared Data Count, {__sharedDataCount}, Max Instance Count: {MaxInstanceCount})");
                         
                         computeBuffer = new ComputeBuffer(
                             count, 
@@ -485,7 +486,7 @@ namespace ZG
             {
                 for (i = 0; i < chunk.count; i += count)
                 {
-                    count = math.min(chunk.count - i, MAX_INSTANCE_COUNT);
+                    count = math.min(chunk.count - i, MaxInstanceCount);
 
                     if (chunk.constantTypeIndex != -1)
                     {
@@ -510,6 +511,9 @@ namespace ZG
 
                             computeBuffer = computeBuffers[__computeBufferStrideToIndices[stride]];
                         }
+                        
+                        UnityEngine.Assertions.Assert.AreEqual(stride, computeBuffer.stride);
+                        UnityEngine.Assertions.Assert.IsFalse(i + count > computeBuffer.count);
 
                         commandBuffer.SetGlobalConstantBuffer(
                             computeBuffer,
