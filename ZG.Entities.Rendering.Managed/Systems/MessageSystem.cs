@@ -32,6 +32,9 @@ namespace ZG
                     __Collect(entity, message, ref parameters);
 
                 messages.Clear();
+                
+                if(parameters.IsCreated)
+                    parameters.Clear();
             }
 
             private void __Collect(in Entity entity, in Message message, ref DynamicBuffer<MessageParameter> parameters)
@@ -197,11 +200,15 @@ namespace ZG
                             foreach (var message in __instances.GetValuesForKey(key))
                                 __Send(message, transform);
 
-                            __instances.Remove(key);
+                            //__instances.Remove(key);
                         }
                     }
+                    
+                    __instances.Clear();
                 }
             }
+            
+            __parameters.Clear();
         }
 
         private void __Send(in Message message, Transform transform)
