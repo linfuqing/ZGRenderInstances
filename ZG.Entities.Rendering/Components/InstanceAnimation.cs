@@ -22,7 +22,7 @@ namespace ZG
 
             public int frameCount;
 
-            public int GetOffsetFrame(int frameCount, int currentFrame, out bool isPlaying)
+            public int GetOffsetFrame(int currentFrame, out bool isPlaying)
             {
                 switch (wrapMode)
                 {
@@ -53,7 +53,7 @@ namespace ZG
             public int Evaluate(float time, int frameCountPerSecond, out bool isPlaying)
             {
                 int offsetFrame = (int)(frameCountPerSecond * time);
-                return startFrame + GetOffsetFrame(frameCount, offsetFrame, out isPlaying);
+                return startFrame + GetOffsetFrame(offsetFrame, out isPlaying);
             
                 //return currentFrame * root.pixelCountPerFrame + root.pixelOffset;
             }
