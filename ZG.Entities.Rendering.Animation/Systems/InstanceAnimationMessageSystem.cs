@@ -138,7 +138,7 @@ namespace ZG
                 __group = builder
                     .WithAll<InstanceAnimationMessage, InstanceAnimationDefinitionData>()
                     .WithAllRW<Message>()
-                    .WithPresent<InstanceAnimationStatus>()
+                    .WithPresentRW<InstanceAnimationStatus>()
                     .Build(ref state);
         }
 
