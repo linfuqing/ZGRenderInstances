@@ -22,7 +22,7 @@ namespace ZG
 
             public BufferAccessor<MessageParameter> messageParameters;
 
-            public int Execute(int index)
+            public bool Execute(int index, out int numMessages)
             {
                 InstanceAnimationStatus animationStatus;
                 animationStatus.clipIndex = -1;
@@ -31,7 +31,8 @@ namespace ZG
                 var animationMessages = this.animationMessages[index];
                 var messages = this.messages[index];
                 var messageParameters = index < this.messageParameters.Length ? this.messageParameters[index] : default;
-                int numMessages = messages.Length, numMessageParameters = messageParameters.IsCreated ? messageParameters.Length : 0, i, j;
+                int i, j, numMessageParameters = messageParameters.IsCreated ? messageParameters.Length : 0;
+                numMessages = messages.Length;
                 foreach (var animationMessage in animationMessages)
                 {
                     for (i = 0; i < numMessages; ++i)
@@ -70,9 +71,11 @@ namespace ZG
                     animationStatus.time = 0.0f;
 
                     animationStates[index] = animationStatus;
+
+                    return true;
                 }
 
-                return numMessages;
+                return false;
             }
         }
         
@@ -100,13 +103,16 @@ namespace ZG
                 apply.animationStates = chunk.GetNativeArray(ref animationStatusType);
                 apply.messages = chunk.GetBufferAccessor(ref messageType);
                 apply.messageParameters = chunk.GetBufferAccessor(ref messageParameterType);
-                
+
+                int numMessages;
                 var iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
                 while (iterator.NextEntityIndex(out int i))
                 {
-                    if (apply.Execute(i) < 1)
+                    if (apply.Execute(i, out numMessages))
                     {
-                        chunk.SetComponentEnabled(ref messageType, i, false);
+                        if(numMessages < 1)
+                            chunk.SetComponentEnabled(ref messageType, i, false);
+                        
                         chunk.SetComponentEnabled(ref animationStatusType, i, true);
                     }
                 }
