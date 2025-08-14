@@ -104,8 +104,11 @@ namespace ZG
                 var iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
                 while (iterator.NextEntityIndex(out int i))
                 {
-                    if(apply.Execute(i) < 1)
+                    if (apply.Execute(i) < 1)
+                    {
                         chunk.SetComponentEnabled(ref messageType, i, false);
+                        chunk.SetComponentEnabled(ref animationStatusType, i, true);
+                    }
                 }
             }
         }
@@ -134,7 +137,8 @@ namespace ZG
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
                 __group = builder
                     .WithAll<InstanceAnimationMessage, InstanceAnimationDefinitionData>()
-                    .WithAllRW<InstanceAnimationStatus, Message>()
+                    .WithAllRW<Message>()
+                    .WithPresent<InstanceAnimationStatus>()
                     .Build(ref state);
         }
 
