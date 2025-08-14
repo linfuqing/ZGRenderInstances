@@ -146,7 +146,7 @@ namespace ZG
                 else
                 {
                     InstanceAnimationStatus status;
-                    status.clipIndex = animation.defaultClipIndex;
+                    status.clipIndex = enterClipIndex;
                     status.time = 0.0f;
                     baker.AddComponent(entity, status);
                 }
