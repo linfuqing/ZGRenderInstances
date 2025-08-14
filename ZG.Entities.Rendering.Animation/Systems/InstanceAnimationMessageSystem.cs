@@ -137,8 +137,8 @@ namespace ZG
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
                 __group = builder
                     .WithAll<InstanceAnimationMessage, InstanceAnimationDefinitionData>()
-                    .WithAllRW<Message>()
                     .WithPresentRW<InstanceAnimationStatus>()
+                    .WithAllRW<Message>()
                     .Build(ref state);
         }
 
