@@ -13,33 +13,45 @@ namespace ZG
     {
         private struct Collect
         {
-            [ReadOnly] public NativeArray<Entity> entityArray;
+            [ReadOnly] 
+            public ComponentLookup<CopyMatrixToTransformInstanceID> instanceIDs;
+            
+            [ReadOnly] 
+            public NativeArray<Entity> entityArray;
+
+            [ReadOnly]
+            public NativeArray<MessageParent> parents;
 
             public BufferAccessor<MessageParameter> inputParameters;
 
             public BufferAccessor<Message> inputMessages;
 
-            public NativeParallelMultiHashMap<Entity, Message> outputMessages;
+            public NativeParallelMultiHashMap<int, Message> outputMessages;
 
             public NativeParallelMultiHashMap<int, MessageParameter> outputParameters;
 
-            public void Execute(int index)
+            public bool Execute(int index)
             {
-                Entity entity = entityArray[index];
+                Entity entity = index < parents.Length ? parents[index].entity : entityArray[index];
+                if (!instanceIDs.TryGetComponent(entity, out var instanceID))
+                    return false;
+                
                 var parameters = index < inputParameters.Length ? inputParameters[index] : default;
                 var messages = inputMessages[index];
                 foreach (var message in messages)
-                    __Collect(entity, message, ref parameters);
+                    __Collect(instanceID.value, message, ref parameters);
 
                 messages.Clear();
                 
                 if(parameters.IsCreated)
                     parameters.Clear();
+
+                return true;
             }
 
-            private void __Collect(in Entity entity, in Message message, ref DynamicBuffer<MessageParameter> parameters)
+            private void __Collect(int instanceID, in Message message, ref DynamicBuffer<MessageParameter> parameters)
             {
-                outputMessages.Add(entity, message);
+                outputMessages.Add(instanceID, message);
 
                 if (message.key != 0)
                 {
@@ -63,13 +75,20 @@ namespace ZG
         [BurstCompile]
         private struct CollectEx : IJobChunk
         {
-            [ReadOnly] public EntityTypeHandle entityType;
+            [ReadOnly] 
+            public ComponentLookup<CopyMatrixToTransformInstanceID> instanceIDs;
 
+            [ReadOnly] 
+            public EntityTypeHandle entityType;
+
+            [ReadOnly] 
+            public ComponentTypeHandle<MessageParent> parentType;
+            
             public BufferTypeHandle<MessageParameter> inputParameterType;
 
             public BufferTypeHandle<Message> inputMessageType;
 
-            public NativeParallelMultiHashMap<Entity, Message> outputMessages;
+            public NativeParallelMultiHashMap<int, Message> outputMessages;
 
             public NativeParallelMultiHashMap<int, MessageParameter> outputParameters;
 
@@ -80,7 +99,9 @@ namespace ZG
                 in v128 chunkEnabledMask)
             {
                 Collect collect;
+                collect.instanceIDs = instanceIDs;
                 collect.entityArray = chunk.GetNativeArray(entityType);
+                collect.parents = chunk.GetNativeArray(ref parentType);
                 collect.inputParameters = chunk.GetBufferAccessor(ref inputParameterType);
                 collect.inputMessages = chunk.GetBufferAccessor(ref inputMessageType);
                 collect.outputMessages = outputMessages;
@@ -89,9 +110,8 @@ namespace ZG
                 var iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
                 while (iterator.NextEntityIndex(out int i))
                 {
-                    collect.Execute(i);
-
-                    chunk.SetComponentEnabled(ref inputMessageType, i, false);
+                    if(collect.Execute(i))
+                        chunk.SetComponentEnabled(ref inputMessageType, i, false);
                 }
             }
         }
@@ -100,7 +120,7 @@ namespace ZG
 
         private ComponentLookup<CopyMatrixToTransformInstanceID> __instanceIDs;
 
-        private ComponentLookup<MessageParent> __parents;
+        private ComponentTypeHandle<MessageParent> __parentType;
 
         private BufferTypeHandle<Message> __instanceType;
 
@@ -108,7 +128,7 @@ namespace ZG
 
         private EntityQuery __group;
 
-        private NativeParallelMultiHashMap<Entity, Message> __instances;
+        private NativeParallelMultiHashMap<int, Message> __instances;
 
         private NativeParallelMultiHashMap<int, MessageParameter> __parameters;
 
@@ -117,18 +137,19 @@ namespace ZG
             base.OnCreate();
 
             __instanceIDs = GetComponentLookup<CopyMatrixToTransformInstanceID>(true);
-            __parents = GetComponentLookup<MessageParent>(true);
+            __parentType = GetComponentTypeHandle<MessageParent>(true);
             __instanceType = GetBufferTypeHandle<Message>();
             __parameterType = GetBufferTypeHandle<MessageParameter>();
 
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
                 __group = builder
                     .WithAll<Message>()
+                    .WithAny<MessageParent, CopyMatrixToTransformInstanceID>()
                     .Build(this);
 
             //RequireForUpdate(__group);
 
-            __instances = new NativeParallelMultiHashMap<Entity, Message>(1, Allocator.Persistent);
+            __instances = new NativeParallelMultiHashMap<int, Message>(1, Allocator.Persistent);
             __parameters = new NativeParallelMultiHashMap<int, MessageParameter>(1, Allocator.Persistent);
         }
 
@@ -145,18 +166,41 @@ namespace ZG
             CompleteDependency();
 
             __entityType.Update(this);
+            __instanceIDs.Update(this);
+            __parentType.Update(this);
             __instanceType.Update(this);
             __parameterType.Update(this);
 
             CollectEx collect;
+            collect.instanceIDs = __instanceIDs;
             collect.entityType = __entityType;
+            collect.parentType = __parentType;
             collect.inputMessageType = __instanceType;
             collect.inputParameterType = __parameterType;
             collect.outputMessages = __instances;
             collect.outputParameters = __parameters;
             collect.RunByRef(__group);
-
+            
             if (!__instances.IsEmpty)
+            {
+                using (var keys = __instances.GetKeyArray(Allocator.Temp))
+                {
+                    Transform transform;
+                    foreach (var key in keys)
+                    {
+                        transform = Resources.InstanceIDToObject(key) as Transform;
+
+                        foreach (var message in __instances.GetValuesForKey(key))
+                            __Send(message, transform);
+
+                        //__instances.Remove(key);
+                    }
+                }
+                    
+                __instances.Clear();
+            }
+
+            /*if (!__instances.IsEmpty)
             {
                 __parents.Update(this);
 
@@ -206,7 +250,7 @@ namespace ZG
                     
                     __instances.Clear();
                 }
-            }
+            }*/
             
             __parameters.Clear();
         }
