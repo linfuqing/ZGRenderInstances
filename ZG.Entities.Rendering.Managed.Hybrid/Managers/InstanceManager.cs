@@ -196,7 +196,7 @@ namespace ZG
                     UnityEngine.Profiling.Profiler.BeginSample("Apply");
 
                     CopyMatrixToTransformInstanceID instanceID;
-                    instanceID.isSendMessageOnDestroy = true;
+                    instanceID.isSendMessageOnDestroy = false;
 
                     GameObject gameObject;
                     Transform transform;
