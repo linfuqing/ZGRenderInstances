@@ -181,11 +181,13 @@ namespace ZG
             
             if (!__outputs.IsEmpty)
             {
-                using (var keys = __outputs.GetKeyArray(Allocator.Temp))
+                var (keys, count) = __outputs.GetUniqueKeyArray(Allocator.Temp);
                 {
+                    int key;
                     Transform transform;
-                    foreach (var key in keys)
+                    for(int i = 0; i < count; ++i)
                     {
+                        key = keys[i];
                         transform = Resources.InstanceIDToObject(key) as Transform;
 
                         foreach (var message in __outputs.GetValuesForKey(key))
@@ -194,6 +196,7 @@ namespace ZG
                         //__instances.Remove(key);
                     }
                 }
+                keys.Dispose();
                     
                 __outputs.Clear();
             }
