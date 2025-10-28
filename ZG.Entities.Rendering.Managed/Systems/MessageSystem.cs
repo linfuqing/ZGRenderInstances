@@ -277,7 +277,7 @@ namespace ZG
                 __outputParameters.Remove(message.key);
             }
 
-            if (transform != null)
+            if (transform != null && transform.gameObject.activeInHierarchy)
             {
                 try
                 {
@@ -286,7 +286,7 @@ namespace ZG
                 }
                 catch (Exception e)
                 {
-                    UnityEngine.Debug.LogException(e.InnerException ?? e);
+                    Debug.LogException(e.InnerException ?? e);
                 }
             }
         }

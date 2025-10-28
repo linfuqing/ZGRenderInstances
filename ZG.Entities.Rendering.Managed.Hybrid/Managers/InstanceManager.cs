@@ -21,7 +21,7 @@ namespace ZG
         }
 
         [Serializable]
-        public struct Prefab
+        internal struct Prefab
         {
             public string name;
             public string destroyMessageName;
