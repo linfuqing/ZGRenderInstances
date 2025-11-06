@@ -12,8 +12,12 @@
 * 3.最终整合成CommandBuffer，有更高的灵活度。  
 * 4.Sprite数据传入ConstantBuffer，与MeshRenderer走渲染队列并在DOTS进行透明排序。  
 * 5.根据SkinMeshRenderer自动生成GPU Animation Texture，在Vertex Shader读取并蒙皮。  
-# 如何使用
-在Unity中Window > Package Manager > + > Add package from git URL > 输入https://github.com/linfuqing/ZGRenderInstances.git  
-如果不熟悉DOTS的使用，请先参考[Entites](https://docs.unity3d.com/Packages/com.unity.entities@1.3/manual/index.html)  
-基本用法与[Entites Graphics](https://docs.unity3d.com/Packages/com.unity.entities.graphics@1.3/manual/index.html)一致
+# 如何使用  
+在Unity中Window>Package Manager>+>Add package from git URL>输入https://github.com/linfuqing/ZGRenderInstances.git  
+如果不熟悉DOTS的使用，请先参考[Entites](https://docs.unity3d.com/Packages/com.unity.entities@1.3/manual/index.html)，基本用法与[Entites Graphics](https://docs.unity3d.com/Packages/com.unity.entities.graphics@1.3/manual/index.html)一致。  
+## Getting started  
+* 1.在Unity里创建一个新场景：File>New Scene选择Standard（URP），然后保存：File->Save Scene，保存为Test。  
+* 2.创建一个子场景：选中创建的新场景Test右键添加子场景：New Empty Sub Scene，直接保存为New Sub Scene。  
+* 3.在子场景内创建一个Cube：New Sub Scene右键GameObject>3D Object>Cube。  
+* 4.运行，你将看到一个不带光照的Cube。Cube的实体可以通过Entities Hierarchy（Window>Entities>Hierarchy）进行查看。  
 
