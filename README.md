@@ -27,9 +27,9 @@ Instance是一个套Entity与GameObject一对一同步的解决方案。Instance
 * InstanceAuthoring：DOTS组件，Bake后会自动在InstanceManager寻找同名的配置，并实列化对应的Prefab。并实时同步实例化后GameObject上的Transform（对应Entity的LocalTransform）及GameObject开关（对应Entity的开关Disabled）  
 * MessageAuthoring：自定义消息，可以通过Entity端调用GameObject上Component对应的方法并传参以实现更多的自定义逻辑。  
 比如要实现一个游戏NPC，我们把NPC的所有AI逻辑都放在DOTS内实现，同时要求这个NPC在不同状态播放对应的音效。通过Instance就可以实现这个需求：   
-* 1.创建一个Prefab，并在这个Prefab上挂载一个AudioSource组件。把这个Prefab配置到场景里对应的InstanceManager上，取名为“NPC”。  
-* 2.在子场景里，要Bake成Entity的NPC实体对象上挂载InstanceAuthoring和MessageAuthoring，并在InstanceAuthoring的NameOverride上填写对应InstanceManager上的Prefab配置名“NPC”。  
-* 3.在DOTS里实现播放对应的AudioClip逻辑：
+	* 1.创建一个Prefab，并在这个Prefab上挂载一个AudioSource组件。把这个Prefab配置到场景里对应的InstanceManager上，取名为“NPC”。  
+	* 2.在子场景里，要Bake成Entity的NPC实体对象上挂载InstanceAuthoring和MessageAuthoring，并在InstanceAuthoring的NameOverride上填写对应InstanceManager上的Prefab配置名“NPC”。  
+	* 3.在DOTS里实现播放对应的AudioClip逻辑：
 ```c#
 BufferLookup<Message> messageLookup;  
 UnityObjectRef<UnityEngine.Object> audioClipToPlay; //要播放的AudioClip，需要在Bake的时候转化成UnityObjectRef<UnityEngine.Object>
