@@ -30,7 +30,6 @@ Instance是一个套Entity与GameObject一对一同步的解决方案。Instance
 * 1.创建一个Prefab，并在这个Prefab上挂载一个AudioSource组件。把这个Prefab配置到场景里对应的InstanceManager上，取名为“NPC”。  
 * 2.在子场景里，要Bake成Entity的NPC实体对象上挂载InstanceAuthoring和MessageAuthoring，并在InstanceAuthoring的NameOverride上填写对应InstanceManager上的Prefab配置名“NPC”。  
 * 3.在DOTS里实现播放对应的AudioClip逻辑：
-"
 ```c#
 BufferLookup<Message> messageLookup;  
 UnityObjectRef<UnityEngine.Object> audioClipToPlay; //要播放的AudioClip，需要在Bake的时候转化成UnityObjectRef<UnityEngine.Object>
@@ -46,4 +45,4 @@ message.value = audioClipToPlay;
 messages.Add(message);
 
 messageLookup.SetCompoenntEnabled(entity, true);
-"
+```
