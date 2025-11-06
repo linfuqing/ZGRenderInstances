@@ -41,7 +41,7 @@ DynamicBuffer<Message> messages = messageLookup[npcEntity];
 
 Message message;
 message.key = 0;
-message.name = "Play";   //填写要调用的AudioSource方法Play
+message.name = "PlayOneShot";   //填写要调用的AudioSource方法名PlayOneShot
 message.value = audioClipToPlay; 
 messages.Add(message);
 
