@@ -57,7 +57,7 @@ InstanceSkinnedMesh是一套可以把对应预制体的所有SkinMeshRenderer全
 ## InstanceSprite方案  
 InstanceSprite是可以把SpriteRenderer直接Bake成ECS组件并渲染的解决方案。为了最大化复用，所有Sprite需要先集合成SpriteAtlas才能使用。
 * SpriteAltasDatabase：在Assets文件夹右键Create/ZG/Sprite Altas Database创建，用来管理SpriteAtlas，所有SpriteRenderer的Sprite都需要集合成SpriteAtlas并被SpriteAltasDatabase引用，才能在Bake时被正确识别。  
-简单使用方式：
+简单使用方式：  
 * 1.在Assets文件夹右键Create/2D/Sprite Altas创建SpriteAtlas并引用需要渲染的Sprite。  
 * 2.在Assets文件夹右键Create/ZG/Sprite Altas Database创建SpriteAltasDatabase并引用SpriteAtlas。  
 * 3.在子场景里，渲染要Bake成Entity的GameObject上挂载SpriteRenderer并引用Sprite。  
