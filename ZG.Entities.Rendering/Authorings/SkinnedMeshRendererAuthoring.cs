@@ -10,6 +10,13 @@ namespace ZG
 {
     public class SkinnedMeshRendererAuthoring : MonoBehaviour
     {
+        [Serializable]
+        internal struct RandomClip
+        {
+            public string name;
+            public float chance;
+        }
+        
         public class Baker : Baker<SkinnedMeshRendererAuthoring>
         {
             public static bool Bake(
@@ -65,23 +72,31 @@ namespace ZG
                 return true;
             }
 
-            public static void Bake(
+            public static bool Bake(
                 IBaker baker, 
                 in Entity entity, 
                 GameObject gameObject, 
                 string defaultClipName, 
-                string enterClipName)
+                string enterClipName, 
+                out InstanceAnimationDefinitionData animation)
             {
                 var skinnedMeshRenderers = gameObject == null ? null : gameObject.GetComponentsInChildren<SkinnedMeshRenderer>();
                 int numSkinnedMeshRenderers = skinnedMeshRenderers == null ? 0 : skinnedMeshRenderers.Length;
                 if (numSkinnedMeshRenderers < 1)
-                    return;
+                {
+                    animation = default;
+
+                    return false;
+                }
 
                 var database = SkinnedMeshRendererDatabase.FindDatabase(gameObject);
                 if (database == null)
-                    return;
+                {
+                    animation = default;
 
-                InstanceAnimationDefinitionData animation;
+                    return false;
+                }
+
                 animation.definition = database.CreateAnimationDefinition(Allocator.Persistent);
                 baker.AddBlobAsset(ref animation.definition, out _);
 
@@ -150,6 +165,8 @@ namespace ZG
                     status.time = 0.0f;
                     baker.AddComponent(entity, status);
                 }
+
+                return true;
             }
 
             public override void Bake(SkinnedMeshRendererAuthoring authoring)
@@ -162,11 +179,27 @@ namespace ZG
                 }
 
                 Entity entity = GetEntity(authoring, TransformUsageFlags.Renderable);
-                Bake(this, 
-                    entity, 
-                    authoring._prefab, 
-                    authoring._defaultClipName, 
-                    authoring._enterClipName);
+                if (!Bake(this,
+                        entity,
+                        authoring._prefab,
+                        authoring._defaultClipName,
+                        authoring._enterClipName,
+                        out var animation))
+                    return;
+                
+                int numEnterRandomClipNames = authoring._enterRandomClips == null ? 0 : authoring._enterRandomClips.Length;
+                if (numEnterRandomClipNames > 0)
+                {
+                    var enterClips = AddBuffer<InstanceAnimationEnterClip>(entity);
+                    enterClips.ResizeUninitialized(numEnterRandomClipNames);
+                    for (int i = 0; i < numEnterRandomClipNames; ++i)
+                    {
+                        ref var source = ref authoring._enterRandomClips[i];
+                        ref var destination = ref enterClips.ElementAt(i);
+                        destination.index = animation.IndexOfClip(source.name);
+                        destination.chance = source.chance;
+                    }
+                }
             }
         }
 
@@ -175,6 +208,9 @@ namespace ZG
         
         [SerializeField] 
         internal string _enterClipName = "Idle";
+
+        [SerializeField] 
+        internal RandomClip[] _enterRandomClips;
 
         [SerializeField]
         internal GameObject _prefab;

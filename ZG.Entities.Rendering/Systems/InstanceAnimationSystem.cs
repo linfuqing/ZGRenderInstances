@@ -2,6 +2,7 @@ using Unity.Burst;
 using Unity.Burst.Intrinsics;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.Transforms;
 
 namespace ZG
@@ -11,10 +12,17 @@ namespace ZG
     {
         private struct Evaluate
         {
+            public bool isEnter;
+            
             public float deltaTime;
+            
+            public Random random;
             
             [ReadOnly]
             public BufferAccessor<InstanceSkinnedMeshRenderer> skinnedMeshRenderers;
+            
+            [ReadOnly]
+            public BufferAccessor<InstanceAnimationEnterClip> enterClips;
 
             [ReadOnly]
             public NativeArray<InstanceAnimationDefinitionData> definitions;
@@ -26,8 +34,25 @@ namespace ZG
 
             public bool Execute(int index)
             {
-                var definition = definitions[index];
                 var status = states[index];
+                if (isEnter && index < enterClips.Length)
+                {
+                    float randomValue = random.NextFloat(), chance = 0.0f;
+                    var enterClips = this.enterClips[index];
+                    foreach (var enterClip in enterClips)
+                    {
+                        chance += enterClip.chance;
+                        if (chance > randomValue)
+                        {
+                            status.clipIndex = enterClip.index;
+                            status.time = 0.0f;
+                            
+                            break;
+                        }
+                    }
+                }
+                
+                var definition = definitions[index];
                 bool isPlaying = status.Evaluate(deltaTime, skinnedMeshRenderers[index].AsNativeArray(),
                     ref definition.definition.Value, ref skinnedDatas);
 
@@ -48,6 +73,7 @@ namespace ZG
         [BurstCompile]
         private struct EvaluateEx : IJobChunk
         {
+            public uint hash;
             public float deltaTime;
             
             [ReadOnly]
@@ -58,6 +84,8 @@ namespace ZG
 
             public ComponentTypeHandle<InstanceAnimationStatus> statusType;
             
+            public BufferTypeHandle<InstanceAnimationEnterClip> enterClipType;
+
             [NativeDisableParallelForRestriction]
             public ComponentLookup<RenderSkinnedData> skinnedDatas;
 
@@ -65,8 +93,10 @@ namespace ZG
                 in v128 chunkEnabledMask)
             {
                 Evaluate evaluate;
+                evaluate.random = Random.CreateFromIndex(hash ^ (uint)unfilteredChunkIndex);
                 evaluate.deltaTime = deltaTime;
                 evaluate.skinnedMeshRenderers = chunk.GetBufferAccessor(ref skinnedMeshRendererType);
+                evaluate.enterClips = chunk.GetBufferAccessor(ref enterClipType);
                 evaluate.definitions = chunk.GetNativeArray(ref definitionType);
                 evaluate.states = chunk.GetNativeArray(ref statusType);
                 evaluate.skinnedDatas = skinnedDatas;
@@ -74,12 +104,15 @@ namespace ZG
                 var iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
                 while (iterator.NextEntityIndex(out int i))
                 {
+                    evaluate.isEnter = chunk.IsComponentEnabled(ref enterClipType, i);
                     if(!evaluate.Execute(i))
                         chunk.SetComponentEnabled(ref statusType, i, false);
+
+                    if (evaluate.isEnter)
+                        chunk.SetComponentEnabled(ref enterClipType, i, false);
                 }
             }
         }
-        
         
         private BufferTypeHandle<InstanceSkinnedMeshRenderer> __skinnedMeshRendererType;
 
@@ -87,6 +120,8 @@ namespace ZG
 
         private ComponentTypeHandle<InstanceAnimationStatus> __statusType;
             
+        private BufferTypeHandle<InstanceAnimationEnterClip> __enterClipType;
+
         private ComponentLookup<RenderSkinnedData> __skinnedDatas;
 
         private EntityQuery __group;
@@ -97,6 +132,7 @@ namespace ZG
             __skinnedMeshRendererType = state.GetBufferTypeHandle<InstanceSkinnedMeshRenderer>(true);
             __definitionType = state.GetComponentTypeHandle<InstanceAnimationDefinitionData>(true);
             __statusType = state.GetComponentTypeHandle<InstanceAnimationStatus>();
+            __enterClipType = state.GetBufferTypeHandle<InstanceAnimationEnterClip>();
             __skinnedDatas = state.GetComponentLookup<RenderSkinnedData>();
 
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
@@ -112,13 +148,18 @@ namespace ZG
             __skinnedMeshRendererType.Update(ref state);
             __definitionType.Update(ref state);
             __statusType.Update(ref state);
+            __enterClipType.Update(ref state);
             __skinnedDatas.Update(ref state);
+
+            long hash = math.aslong(SystemAPI.Time.ElapsedTime);
             
             EvaluateEx evaluate;
+            evaluate.hash = (uint)(hash >> 32) ^ (uint)hash;
             evaluate.deltaTime = SystemAPI.Time.DeltaTime;
             evaluate.skinnedMeshRendererType = __skinnedMeshRendererType;
             evaluate.definitionType = __definitionType;
             evaluate.statusType = __statusType;
+            evaluate.enterClipType = __enterClipType;
             evaluate.skinnedDatas = __skinnedDatas;
 
             state.Dependency = evaluate.ScheduleParallelByRef(__group, state.Dependency);

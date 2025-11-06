@@ -158,6 +158,13 @@ namespace ZG
         }
     }
 
+    public struct InstanceAnimationEnterClip : IBufferElementData, IEnableableComponent
+    {
+        public int index;
+        
+        public float chance;
+    }
+    
     public struct InstanceSkinnedMeshRenderer : IBufferElementData
     {
         public int index;
