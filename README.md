@@ -16,8 +16,8 @@
 在Unity中Window>Package Manager>+>Add package from git URL>输入https://github.com/linfuqing/ZGRenderInstances.git  
 如果不熟悉DOTS的使用，请先参考[Entites](https://docs.unity3d.com/Packages/com.unity.entities@1.3/manual/index.html)，基本用法与[Entites Graphics](https://docs.unity3d.com/Packages/com.unity.entities.graphics@1.3/manual/index.html)一致。  
 ## Getting started  
-* 1.在Unity里创建一个新场景：File>New Scene选择Standard（URP），然后保存：File->Save Scene，保存为Test。  
-* 2.创建一个子场景：选中创建的新场景Test右键添加子场景：New Empty Sub Scene，直接保存为New Sub Scene。  
-* 3.在子场景内创建一个Cube：New Sub Scene右键GameObject>3D Object>Cube。  
-* 4.运行，你将看到一个不带光照的Cube。Cube的实体可以通过Entities Hierarchy（Window>Entities>Hierarchy）进行查看。  
-
+* 1.创建一个空的Unity URP工程。
+* 2.选中Universal Renderer Data（默认创建的三个名字分别为URP-Balanced-Renderer，URP-HighFidelity-Renderer，URP-Performant-Renderer）>Add Renderer Feature>Render Instances Pass Feature，并把Rendering Path改为Forward+。  
+* 3.创建一个子场景：选中场景右键添加子场景：New Empty Sub Scene，直接保存为New Sub Scene。  
+* 4.在子场景内创建一个Cube：New Sub Scene右键GameObject>3D Object>Cube。  
+* 5.运行，你会看到Cube已经以DOTS的方式渲染出来了。Cube的Entity可以通过Entities Hierarchy（Window>Entities>Hierarchy）进行查看。  
