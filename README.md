@@ -27,9 +27,9 @@ Instance是一个套Entity与GameObject一对一同步的解决方案。Instance
 * InstanceAuthoring：ECS组件，Bake后会自动在InstanceManager寻找同名的配置，并实列化对应的Prefab。并实时同步实例化后GameObject上的Transform（对应Entity的LocalTransform）及GameObject开关（对应Entity的开关Disabled）  
 * MessageAuthoring：自定义消息，可以通过Entity端调用GameObject上Component对应的方法并传参以实现更多的自定义逻辑。  
 ### Getting started  
-比如要实现一个游戏NPC，我们把NPC的所有AI逻辑都放在ECS内实现，同时要求这个NPC在不同状态播放对应的音效。通过Instance就可以实现这个需求：   
+比如要实现一个游戏NPC，我们把NPC的所有AI逻辑都放在ECS内实现，同时要求这个NPC在不同状态播放对应的不同音效。通过Instance就可以实现这个需求：   
 	* 1.创建一个Prefab，并在这个Prefab上挂载一个AudioSource组件。把这个Prefab配置到场景里对应的InstanceManager上，取名为“NPC”。  
-	* 2.在子场景里，NPC要Bake成Entity的GameObject上挂载InstanceAuthoring和MessageAuthoring，并在InstanceAuthoring的NameOverride上填写对应InstanceManager上的Prefab配置名“NPC”。  
+	* 2.在子场景里，该NPC要Bake成Entity的GameObject上挂载InstanceAuthoring和MessageAuthoring，并在InstanceAuthoring的NameOverride上填写对应InstanceManager上的Prefab配置名“NPC”。  
 	* 3.在ECS里实现播放对应的AudioClip逻辑：
 ```c#
 BufferLookup<Message> messageLookup;  
@@ -56,7 +56,7 @@ InstanceSkinnedMesh是一套可以把对应预制体的所有SkinMeshRenderer全
 有的时候你可能希望同时用SkinnedMeshRendererAuthoring和UnityEngine.Animator来渲染不同的怪物，比如大量的小怪使用SkinnedMeshRendererAuthoring来进行Instance优化，而BOSS使用Instance方案桥接GameObject端的Animator来保证动画混合及灵活度。
 此时通过同一套Message来管理动画播放是逻辑和渲染分离的有效办法。    
 ## InstanceSprite方案  
-InstanceSprite是可以把SpriteRenderer直接Bake成ECS组件并渲染的解决方案。为了最大化复用，所有Sprite需要先集合成SpriteAtlas才能使用。
+InstanceSprite是可以把SpriteRenderer直接Bake成ECS组件并渲染的解决方案。为了最大化复用，所有Sprite需要先集合成[SpriteAtlas](https://docs.unity3d.com/2022.3/Documentation/Manual/sprite-atlas.html)才能使用。
 * SpriteAltasDatabase：在Assets文件夹右键Create/ZG/Sprite Altas Database创建，用来管理SpriteAtlas，所有SpriteRenderer的Sprite都需要集合成SpriteAtlas并被SpriteAltasDatabase引用，才能在Bake时被正确识别。  
 ### Getting started  
 * 1.在Assets文件夹右键Create/2D/Sprite Altas创建SpriteAtlas并引用需要渲染的Sprite。  
