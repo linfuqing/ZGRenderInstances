@@ -62,6 +62,6 @@ InstanceSprite是可以把SpriteRenderer直接Bake成ECS组件并渲染的解决
 * 1.在Assets文件夹右键Create/2D/Sprite Altas创建SpriteAtlas并引用需要渲染的Sprite。  
 * 2.在Assets文件夹右键Create/ZG/Sprite Altas Database创建SpriteAltasDatabase并引用SpriteAtlas。  
 * 3.把要渲染的SpriteRenderer拖入子场景进行Bake。
-#FAQ
-## 为什么需要Forward+
+# FAQ  
+## 为什么需要Forward+  
 因为DrawMeshInstanced不支持per-instance data，所以URP的前向光照无效（也可能是BUG）。
