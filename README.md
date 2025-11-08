@@ -50,18 +50,19 @@ messageLookup.SetCompoenntEnabled(entity, true);
 ## InstanceSkinnedMesh方案  
 InstanceSkinnedMesh是一套可以把对应预制体的所有SkinMeshRenderer全部Bake成GPU Animation Texture Array并在ECS渲染的解决方案，附带基础的动画播放的能力。  
 * SkinnedInstanceNode：要渲染GPU Animation，需要在Shader Graph加入此节点来生成Shader。  
-* SkinnedMeshRendererDatabase：在Assets文件夹右键Create/ZG/Skinned Mesh Renderer Database创建，可以通过引用多个含SkinnedMeshRenderer的Prefab来生成GPU Animation Texture Array并根据材质模板（需要SkinnedInstanceNode的Shader）生成可渲染的Material并填充。  
+* SkinnedMeshRendererDatabase：在Assets右键Create/ZG/Skinned Mesh Renderer Database创建，可以通过引用多个含SkinnedMeshRenderer的Prefab来生成GPU Animation Texture Array并根据材质模板（需要SkinnedInstanceNode的Shader）生成可渲染的Material并填充。  
 * SkinnedMeshRendererAuthoring：可以通过引用的Prefab来自动查找并复用工程内创建好的GPU Animation Texture Array及Material，在ECS里直接渲染。  
 * InstanceAnimationMessageAuthoring：可以使Message对动画进行控制。
 有的时候你可能希望同时用SkinnedMeshRendererAuthoring和UnityEngine.Animator来渲染不同的怪物，比如大量的小怪使用SkinnedMeshRendererAuthoring来进行Instance优化，而BOSS使用Instance方案桥接GameObject端的Animator来保证动画混合及灵活度。
 此时通过同一套Message来管理动画播放是逻辑和渲染分离的有效办法。    
 ## InstanceSprite方案  
-InstanceSprite是可以把SpriteRenderer直接Bake成ECS组件并渲染的解决方案。为了最大化复用，所有Sprite需要先集合成[SpriteAtlas](https://docs.unity3d.com/2022.3/Documentation/Manual/sprite-atlas.html)才能使用。
-* SpriteAltasDatabase：在Assets文件夹右键Create/ZG/Sprite Altas Database创建，用来管理SpriteAtlas，所有SpriteRenderer的Sprite都需要集合成SpriteAtlas并被SpriteAltasDatabase引用，才能在Bake时被正确识别。  
+InstanceSprite是一套可以把SpriteRenderer直接Bake成ECS组件自动复用Sprite并渲染的解决方案。为了最大化复用，所有Sprite需要先集合成[SpriteAtlas](https://docs.unity3d.com/2022.3/Documentation/Manual/sprite-atlas.html)才能使用。
+* SpriteAltasDatabase：在Assets右键Create/ZG/Sprite Altas Database创建，用来管理SpriteAtlas，所有SpriteRenderer的Sprite都需要集合成SpriteAtlas并被SpriteAltasDatabase引用，才能在Bake时被正确识别。  
 ### 快速使用  
-* 1.在Assets文件夹右键Create/2D/Sprite Altas创建SpriteAtlas并引用需要渲染的Sprite。  
-* 2.在Assets文件夹右键Create/ZG/Sprite Altas Database创建SpriteAltasDatabase并引用SpriteAtlas。  
-* 3.把要渲染的SpriteRenderer拖入子场景进行Bake。
+* 1.Edit>Project Setting..>Editor>Sprite Packer>Mode选成Sprite Atlas V2 - Enabled。  
+* 2.在Assets右键Create/2D/Sprite Altas创建SpriteAtlas并引用需要渲染的Sprite。  
+* 3.在Assets右键Create/ZG/Sprite Altas Database创建SpriteAltasDatabase并引用SpriteAtlas。  
+* 4.把要渲染的SpriteRenderer拖入子场景进行Bake。
 # FAQ  
 ## 为什么需要Forward+  
 因为DrawMeshInstanced不支持per-instance data，所以URP的前向光照无效（也可能是BUG）。
