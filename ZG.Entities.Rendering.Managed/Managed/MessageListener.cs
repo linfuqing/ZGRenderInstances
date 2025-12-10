@@ -5,13 +5,16 @@ public sealed class MessageListener : MonoBehaviour
 {
     public static NativeParallelMultiHashMap<FixedString32Bytes, int> instanceIDs;
 
+    [SerializeField] 
+    internal string _nameOverride;
+
     private FixedString32Bytes __name;
     
     private int __instanceID;
 
     void Awake()
     {
-        __name = name;
+        __name = string.IsNullOrEmpty(_nameOverride) ? name : _nameOverride;
         __instanceID = transform.GetInstanceID();
         
         if (!instanceIDs.IsCreated)
