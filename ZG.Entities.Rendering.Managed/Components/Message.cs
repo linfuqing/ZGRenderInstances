@@ -25,6 +25,13 @@ namespace ZG
         public int id;
     }
 
+    public struct MessageSender : IBufferElementData
+    {
+        public FixedString32Bytes listenerName;
+        public FixedString128Bytes messageName;
+        public UnityObjectRef<Object> messageValue;
+    }
+
     public struct MessageParent : IComponentData
     {
         public Entity entity;

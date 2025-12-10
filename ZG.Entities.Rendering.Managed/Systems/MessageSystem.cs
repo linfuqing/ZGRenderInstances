@@ -11,6 +11,101 @@ namespace ZG
      UpdateBefore(typeof(BeginInitializationEntityCommandBufferSystem))]
     public partial class MessageSystem : SystemBase
     {
+        private struct Send
+        {
+            [ReadOnly]
+            public NativeParallelMultiHashMap<FixedString32Bytes, int> instanceIDs;
+
+            [ReadOnly]
+            public BufferAccessor<MessageSender> senders;
+
+            public BufferAccessor<Message> inputs;
+
+            public BufferAccessor<MessageParameter> inputParameters;
+
+            public NativeParallelMultiHashMap<int, Message> outputs;
+
+            public NativeParallelMultiHashMap<int, MessageParameter> outputParameters;
+
+            public int Execute(int index)
+            {
+                int instanceID;
+                NativeParallelMultiHashMapIterator<FixedString32Bytes> iterator;
+                var senders = this.senders[index];
+                var parameters = index < inputParameters.Length ? inputParameters[index] : default;
+                var messages = inputs[index];
+                int numMessages = messages.Length, i;
+                bool isSend;
+                for (i = 0; i < numMessages; ++i)
+                {
+                    ref var message = ref messages.ElementAt(i);
+
+                    isSend = false;
+                    foreach (var sender in senders)
+                    {
+                        if (message.name == sender.messageName && message.value == sender.messageValue)
+                        {
+                            if (instanceIDs.TryGetFirstValue(sender.listenerName, out instanceID, out iterator))
+                            {
+                                do
+                                {
+                                    __Collect(instanceID, message, ref parameters, ref outputs,
+                                        ref outputParameters);
+                                } while (instanceIDs.TryGetNextValue(out instanceID, ref iterator));
+                            }
+
+                            isSend = true;
+                        }
+                    }
+
+                    if (isSend)
+                        messages[i--] = messages[--numMessages];
+                }
+                
+                if(numMessages < messages.Length)
+                    messages.ResizeUninitialized(numMessages);
+
+                return numMessages;
+            }
+        }
+
+        [BurstCompile]
+        private struct SendEx : IJobChunk
+        {
+            [ReadOnly]
+            public NativeParallelMultiHashMap<FixedString32Bytes, int> instanceIDs;
+
+            [ReadOnly]
+            public BufferTypeHandle<MessageSender> senderType;
+
+            public BufferTypeHandle<Message> inputType;
+
+            public BufferTypeHandle<MessageParameter> inputParameterType;
+
+            public NativeParallelMultiHashMap<int, Message> outputs;
+
+            public NativeParallelMultiHashMap<int, MessageParameter> outputParameters;
+
+            public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask,
+                in v128 chunkEnabledMask)
+            {
+                Send send;
+                send.instanceIDs = instanceIDs;
+                send.senders = chunk.GetBufferAccessor(ref senderType);
+                send.inputs = chunk.GetBufferAccessor(ref inputType);
+                send.inputParameters = chunk.GetBufferAccessor(ref inputParameterType);
+                send.outputs = outputs;
+                send.outputParameters = outputParameters;
+                
+                var iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
+                while (iterator.NextEntityIndex(out int i))
+                {
+                    if(send.Execute(i) < 1)
+                        chunk.SetComponentEnabled(ref inputType, i, false);
+                }
+            }
+        }
+        
         private struct Collect
         {
             [ReadOnly] 
@@ -39,7 +134,7 @@ namespace ZG
                 int instanceID = instanceIDs[index].value;
                 inputParameters.TryGetBuffer(entity, out var parameters);
                 foreach (var message in messages)
-                    __Collect(instanceID, message, ref parameters);
+                    __Collect(instanceID, message, ref parameters, ref outputs, ref outputParameters);
 
                 messages.Clear();
                 
@@ -47,28 +142,6 @@ namespace ZG
                     parameters.Clear();
 
                 inputs.SetBufferEnabled(entity, false);
-            }
-
-            private void __Collect(int instanceID, in Message message, ref DynamicBuffer<MessageParameter> parameters)
-            {
-                outputs.Add(instanceID, message);
-
-                if (message.key != 0)
-                {
-                    int numParameters = parameters.IsCreated ? parameters.Length : 0;
-                    for (int i = 0; i < numParameters; ++i)
-                    {
-                        ref var parameter = ref parameters.ElementAt(i);
-                        if (parameter.messageKey != message.key)
-                            continue;
-
-                        outputParameters.Add(parameter.messageKey, parameter);
-
-                        parameters.RemoveAt(i--);
-
-                        --numParameters;
-                    }
-                }
             }
         }
 
@@ -119,16 +192,51 @@ namespace ZG
 
         private ComponentTypeHandle<MessageParent> __parentType;
 
+        private BufferTypeHandle<MessageSender> __senderType;
+
+        private BufferTypeHandle<Message> __inputType;
+
+        private BufferTypeHandle<MessageParameter> __inputParameterType;
+
         private BufferLookup<Message> __inputs;
 
         private BufferLookup<MessageParameter> __inputParameters;
 
-        private EntityQuery __group;
+        private EntityQuery __childrenGroup;
+        private EntityQuery __collectGroup;
+        private EntityQuery __sendGroup;
 
         private NativeParallelMultiHashMap<int, Message> __outputs;
 
         private NativeParallelMultiHashMap<int, MessageParameter> __outputParameters;
 
+        private static void __Collect(
+            int instanceID, 
+            in Message message, 
+            ref DynamicBuffer<MessageParameter> parameters, 
+            ref NativeParallelMultiHashMap<int, Message> outputs, 
+            ref NativeParallelMultiHashMap<int, MessageParameter> outputParameters)
+        {
+            outputs.Add(instanceID, message);
+
+            if (message.key != 0)
+            {
+                int numParameters = parameters.IsCreated ? parameters.Length : 0;
+                for (int i = 0; i < numParameters; ++i)
+                {
+                    ref var parameter = ref parameters.ElementAt(i);
+                    if (parameter.messageKey != message.key)
+                        continue;
+
+                    outputParameters.Add(parameter.messageKey, parameter);
+
+                    parameters.RemoveAt(i--);
+
+                    --numParameters;
+                }
+            }
+        }
+        
         protected override void OnCreate()
         {
             base.OnCreate();
@@ -136,13 +244,25 @@ namespace ZG
             __entityType = GetEntityTypeHandle();
             __instanceIDType = GetComponentTypeHandle<CopyMatrixToTransformInstanceID>(true);
             __parentType = GetComponentTypeHandle<MessageParent>(true);
+            __senderType = GetBufferTypeHandle<MessageSender>(true);
+            __inputType = GetBufferTypeHandle<Message>();
+            __inputParameterType = GetBufferTypeHandle<MessageParameter>(true);
             __inputs = GetBufferLookup<Message>();
             __inputParameters = GetBufferLookup<MessageParameter>();
 
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
-                __group = builder
-                    .WithAll<CopyMatrixToTransformInstanceID>()
-                    .WithAny<Message, MessageParent>()
+                __childrenGroup = builder
+                    .WithAll<CopyMatrixToTransformInstanceID, MessageParent>()
+                    .Build(this);
+
+            using (var builder = new EntityQueryBuilder(Allocator.Temp))
+                __collectGroup = builder
+                    .WithAll<CopyMatrixToTransformInstanceID, Message>()
+                    .Build(this);
+
+            using (var builder = new EntityQueryBuilder(Allocator.Temp))
+                __sendGroup = builder
+                    .WithAll<MessageSender, Message>()
                     .Build(this);
 
             //RequireForUpdate(__group);
@@ -163,6 +283,23 @@ namespace ZG
         {
             CompleteDependency();
 
+            var instanceIDs = MessageListener.instanceIDs;
+            if (instanceIDs.IsCreated)
+            {
+                __senderType.Update(this);
+                __inputType.Update(this);
+                __inputParameterType.Update(this);
+                
+                SendEx send;
+                send.instanceIDs = instanceIDs;
+                send.senderType = __senderType;
+                send.inputType = __inputType;
+                send.inputParameterType = __inputParameterType;
+                send.outputs = __outputs;
+                send.outputParameters = __outputParameters;
+                send.RunByRef(__sendGroup);
+            }
+
             __entityType.Update(this);
             __instanceIDType.Update(this);
             __parentType.Update(this);
@@ -177,7 +314,8 @@ namespace ZG
             collect.inputParameters = __inputParameters;
             collect.outputs = __outputs;
             collect.outputParameters = __outputParameters;
-            collect.RunByRef(__group);
+            collect.RunByRef(__childrenGroup);
+            collect.RunByRef(__collectGroup);
             
             if (!__outputs.IsEmpty)
             {
