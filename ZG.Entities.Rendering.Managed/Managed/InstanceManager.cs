@@ -776,8 +776,9 @@ namespace ZG
             int numPrefabs = _prefabs.Length;
             for (int i = 0; i < numPrefabs; ++i)
             {
-                UnityEngine.Assertions.Assert.IsNotNull(_prefabs[i].gameObject, _prefabs[i].name);
-                UnityEngine.Assertions.Assert.IsNull(_prefabs[i].gameObject.GetComponentInChildren<Collider>(true), _prefabs[i].name);
+                UnityEngine.Assertions.Assert.IsNotNull(_prefabs[i].gameObject, $"{_prefabs[i].name} 不能为空！");
+                UnityEngine.Assertions.Assert.IsFalse(_prefabs[i].gameObject.activeSelf, $"{_prefabs[i].name} 默认必须关闭！");
+                UnityEngine.Assertions.Assert.IsNull(_prefabs[i].gameObject.GetComponentInChildren<Collider>(true), $"{_prefabs[i].name} 包含碰撞体!");
 
                 __prefabIndices.Add(_prefabs[i].name, (this, i));
             }
