@@ -11,6 +11,23 @@ namespace ZG
      UpdateBefore(typeof(BeginInitializationEntityCommandBufferSystem))]
     public partial class MessageSystem : SystemBase
     {
+        private struct MessageParameterKey : IEquatable<MessageParameterKey>
+        {
+            public int instanceID;
+
+            public int key;
+
+            public bool Equals(MessageParameterKey other)
+            {
+                return instanceID == other.instanceID && key == other.key;
+            }
+
+            public override int GetHashCode()
+            {
+                return instanceID ^ key;
+            }
+        }
+        
         private struct Send
         {
             [ReadOnly]
@@ -25,7 +42,7 @@ namespace ZG
 
             public NativeParallelMultiHashMap<int, Message> outputs;
 
-            public NativeParallelMultiHashMap<(int, int), MessageParameter> outputParameters;
+            public NativeParallelMultiHashMap<MessageParameterKey, MessageParameter> outputParameters;
 
             public int Execute(int index)
             {
@@ -84,7 +101,7 @@ namespace ZG
 
             public NativeParallelMultiHashMap<int, Message> outputs;
 
-            public NativeParallelMultiHashMap<(int, int), MessageParameter> outputParameters;
+            public NativeParallelMultiHashMap<MessageParameterKey, MessageParameter> outputParameters;
 
             public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask,
                 in v128 chunkEnabledMask)
@@ -123,7 +140,7 @@ namespace ZG
 
             public NativeParallelMultiHashMap<int, Message> outputs;
 
-            public NativeParallelMultiHashMap<(int, int), MessageParameter> outputParameters;
+            public NativeParallelMultiHashMap<MessageParameterKey, MessageParameter> outputParameters;
 
             public void Execute(int index)
             {
@@ -163,7 +180,7 @@ namespace ZG
 
             public NativeParallelMultiHashMap<int, Message> outputs;
 
-            public NativeParallelMultiHashMap<(int, int), MessageParameter> outputParameters;
+            public NativeParallelMultiHashMap<MessageParameterKey, MessageParameter> outputParameters;
 
             public void Execute(
                 in ArchetypeChunk chunk,
@@ -208,19 +225,20 @@ namespace ZG
 
         private NativeParallelMultiHashMap<int, Message> __outputs;
 
-        private NativeParallelMultiHashMap<(int, int), MessageParameter> __outputParameters;
+        private NativeParallelMultiHashMap<MessageParameterKey, MessageParameter> __outputParameters;
 
         private static void __Collect(
             int instanceID, 
             in Message message, 
             ref DynamicBuffer<MessageParameter> parameters, 
             ref NativeParallelMultiHashMap<int, Message> outputs, 
-            ref NativeParallelMultiHashMap<(int, int), MessageParameter> outputParameters)
+            ref NativeParallelMultiHashMap<MessageParameterKey, MessageParameter> outputParameters)
         {
             outputs.Add(instanceID, message);
 
             if (message.key != 0)
             {
+                MessageParameterKey key;
                 int numParameters = parameters.IsCreated ? parameters.Length : 0;
                 for (int i = 0; i < numParameters; ++i)
                 {
@@ -228,7 +246,9 @@ namespace ZG
                     if (parameter.messageKey != message.key)
                         continue;
 
-                    outputParameters.Add((instanceID, parameter.messageKey), parameter);
+                    key.instanceID = instanceID;
+                    key.key = parameter.messageKey;
+                    outputParameters.Add(key, parameter);
 
                     parameters.RemoveAt(i--);
 
@@ -268,7 +288,7 @@ namespace ZG
             //RequireForUpdate(__group);
 
             __outputs = new NativeParallelMultiHashMap<int, Message>(1, Allocator.Persistent);
-            __outputParameters = new NativeParallelMultiHashMap<(int, int), MessageParameter>(1, Allocator.Persistent);
+            __outputParameters = new NativeParallelMultiHashMap<MessageParameterKey, MessageParameter>(1, Allocator.Persistent);
         }
 
         protected override void OnDestroy()
@@ -404,15 +424,18 @@ namespace ZG
             }
             else
             {
+                MessageParameterKey key;
+                key.instanceID = instanceID;
+                key.key = message.key;
                 if (messageValue is IMessage temp)
                 {
                     temp.Clear();
 
-                    foreach (var parameter in __outputParameters.GetValuesForKey((instanceID, message.key)))
+                    foreach (var parameter in __outputParameters.GetValuesForKey(key))
                         temp.Set(parameter.id, parameter.value);
                 }
 
-                __outputParameters.Remove((instanceID, message.key));
+                __outputParameters.Remove(key);
             }
 
             if (transform != null && transform.gameObject.activeInHierarchy)
