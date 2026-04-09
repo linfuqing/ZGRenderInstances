@@ -1355,7 +1355,7 @@ namespace ZG
             
             using (var builder = new EntityQueryBuilder(Allocator.Temp))
                 __groupToCulling = builder
-                    .WithAll<RenderSharedData, RenderBoundsWorld>()
+                    .WithAll<RenderSharedData, LocalToWorld, RenderBounds, RenderBoundsWorld>()
                     .WithAllChunkComponent<RenderBoundsWorldChunk>()
                     .Build(ref state);
             
