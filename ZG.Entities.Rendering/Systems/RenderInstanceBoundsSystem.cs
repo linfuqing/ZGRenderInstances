@@ -100,6 +100,9 @@ namespace ZG
 
             destinationMin = targetMin.xz;
             destinationMax = targetMax.xz;
+            
+            destinationMin = math.clamp(destinationMin, byte.MinValue, byte.MaxValue);
+            destinationMax = math.clamp(destinationMax, byte.MinValue, byte.MaxValue);
         }
 
         public RenderBoundsWorldChunk(in MinMaxAABB aabb)
@@ -122,8 +125,8 @@ namespace ZG
                 out var targetMax,
                 out var flag);
 
-            targetMin = math.max(byte.MinValue, targetMin);
-            targetMax = math.min(byte.MaxValue, targetMax);
+            //targetMin = math.max(byte.MinValue, targetMin);
+            //targetMax = math.min(byte.MaxValue, targetMax);
             
             FindNodeInfo(
                 targetMin.x, 
@@ -167,8 +170,8 @@ namespace ZG
                 out var targetMax, 
                 out int flag);
 
-            targetMin = math.max(byte.MinValue, targetMin);
-            targetMax = math.min(byte.MaxValue, targetMax);
+            //targetMin = math.max(byte.MinValue, targetMin);
+            //targetMax = math.min(byte.MaxValue, targetMax);
 
             bool isNextLevel;
             int level = 0, shift, currentMinX, currentMaxX, currentMinY, currentMaxY, nodeIndex, i, j, k;
