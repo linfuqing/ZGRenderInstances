@@ -746,14 +746,14 @@ namespace ZG
                     boundsWorld[i] = renderBoundsWorld;
                 }
 
-                if (!math.all(aabb.Max > aabb.Min))
-                    return;
-                
                 var boundsWorldChunk = new RenderBoundsWorldChunk(aabb);
-                iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
-                while (iterator.NextEntityIndex(out int i))
-                    boundsWorldChunk.Add(i, boundsWorld[i].aabb);
-                
+                if (math.all(aabb.Max > aabb.Min))
+                {
+                    iterator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
+                    while (iterator.NextEntityIndex(out int i))
+                        boundsWorldChunk.Add(i, boundsWorld[i].aabb);
+                }
+
                 chunk.SetChunkComponentData(ref boundsWorldChunkType, boundsWorldChunk);
             }
         }
