@@ -862,6 +862,8 @@ namespace ZG
 
             if (willCurrentFrameRender)
             {
+                CompleteDependency();
+                
                 int constantTypeEntityCount = __constantTypeGroup.CalculateEntityCount();
                 __manager.Begin(constantTypeEntityCount);
             }

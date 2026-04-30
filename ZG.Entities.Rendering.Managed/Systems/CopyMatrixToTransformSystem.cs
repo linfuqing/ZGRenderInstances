@@ -60,9 +60,8 @@ namespace ZG
                     .GetCombinedComponentOrderVersion(
                         false); //(uint)entityManager.GetComponentOrderVersion<CopyMatrixToTransformInstanceID>();
 
-            if (ChangeVersionUtility.DidChange(version, __version) /* ||
-                __group.CalculateEntityCount() != (__transformAccessArray.isCreated ? __transformAccessArray.length : 0)*/
-               )
+            if (ChangeVersionUtility.DidChange(version, __version) ||
+                __group.CalculateEntityCount() != (__transformAccessArray.isCreated ? __transformAccessArray.length : 0))
             {
                 __version = version;
 
