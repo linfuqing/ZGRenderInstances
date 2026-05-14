@@ -150,7 +150,7 @@ namespace ZG
             public string name;
             public string destroyMessageName;
             
-#if INSTANCE_ASSET_STREAMING
+#if UNITY_EDITOR || INSTANCE_ASSET_STREAMING
             [HideInInspector] 
             public string gameObjectName;
             [HideInInspector] 
@@ -168,7 +168,7 @@ namespace ZG
             public bool ToAssetBundleBuild(Dictionary<string, List<string>> assetNameMap)
             {
                 string assetPath = UnityEditor.AssetDatabase.GetAssetPath(gameObject);
-                bool result = false;
+                bool isDirty = false, isContains = false;
                 string assetBundleName;
                 foreach (var pair in assetNameMap)
                 {
@@ -179,14 +179,16 @@ namespace ZG
                         {
                             assetFilename = assetBundleName;
                             
-                            result = true;
+                            isDirty = true;
                         }
+
+                        isContains = true;
 
                         break;
                     }
                 }
 
-                if (!result)
+                if (!isContains)
                 {
                     if (!assetNameMap.TryGetValue(name, out var assetBundleNames))
                     {
@@ -202,10 +204,10 @@ namespace ZG
                 {
                     gameObjectName = assetPath;
 
-                    result = true;
+                    isDirty = true;
                 }
 
-                return result;
+                return isDirty;
             }
 #endif
         }
@@ -701,7 +703,7 @@ namespace ZG
                 
                 UnityEditor.PrefabUtility.UnloadPrefabContents(gameObject);
             }
-
+            
             UnityEditor.EditorUtility.ClearProgressBar();
         }
 #endif
