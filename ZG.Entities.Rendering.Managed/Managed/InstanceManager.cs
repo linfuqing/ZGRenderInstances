@@ -4,6 +4,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Transforms;
@@ -696,6 +697,9 @@ namespace ZG
                     break;
                 
                 assetPath = assetPaths[i];
+                if(Path.GetExtension(assetPath) != ".prefab")
+                    continue;
+                
                 gameObject = UnityEditor.PrefabUtility.LoadPrefabContents(assetPath);
 
                 result = false;
