@@ -22,7 +22,11 @@ namespace ZG
             public InstanceID(in Prefab prefab)
             {
                 Loader = new AssetBundleLoader<GameObject>(
+#if UNITY_EDITOR
+                    UnityEditor.AssetDatabase.GetAssetPath(prefab.gameObject),
+#else
                     prefab.gameObjectName, 
+#endif
                     prefab.assetFilename, 
                     assetManager);
             }
@@ -677,18 +681,22 @@ namespace ZG
 #if UNITY_EDITOR && INSTANCE_ASSET_STREAMING
         public static void ToAssetBundleBuild(Dictionary<string, List<string>> assetNameMap)
         {
-            string[] guids = UnityEditor.AssetDatabase.FindAssets("t:prefab");
-            string path;
+            var assetPaths = new List<string>();
+            foreach (var assetNames in assetNameMap.Values)
+                assetPaths.AddRange(assetNames);
+            
+            //string[] guids = UnityEditor.AssetDatabase.FindAssets("t:prefab");
+            string assetPath;
             GameObject gameObject;
-            int i, j, numPrefabs, numGuids = guids == null ? 0 : guids.Length;
+            int i, j, numPrefabs, numAssetPaths = assetPaths.Count;
             bool result;
-            for (i = 0; i < numGuids; ++i)
+            for (i = 0; i < numAssetPaths; ++i)
             {
-                if (UnityEditor.EditorUtility.DisplayCancelableProgressBar("Collect Instance Manager", i.ToString() + "/" + numGuids, i * 1.0f / numGuids))
+                if (UnityEditor.EditorUtility.DisplayCancelableProgressBar("Collect Instance Manager", i.ToString() + "/" + numAssetPaths, i * 1.0f / numAssetPaths))
                     break;
-
-                path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[i]);
-                gameObject = UnityEditor.PrefabUtility.LoadPrefabContents(path);
+                
+                assetPath = assetPaths[i];
+                gameObject = UnityEditor.PrefabUtility.LoadPrefabContents(assetPath);
 
                 result = false;
                 foreach (var instanceManager in gameObject.GetComponentsInChildren<InstanceManager>(true))
@@ -699,7 +707,7 @@ namespace ZG
                 }
 
                 if(result)
-                    UnityEditor.PrefabUtility.SaveAsPrefabAsset(gameObject, path);
+                    UnityEditor.PrefabUtility.SaveAsPrefabAsset(gameObject, assetPath);
                 
                 UnityEditor.PrefabUtility.UnloadPrefabContents(gameObject);
             }
