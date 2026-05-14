@@ -1,3 +1,7 @@
+#if ZG_ASSET_STREAMING
+#define INSTANCE_ASSET_STREAMING
+#endif
+
 using System;
 using System.Collections.Generic;
 using Unity.Collections;
@@ -10,14 +14,134 @@ namespace ZG
 {
     public sealed class InstanceManager : MonoBehaviour
     {
-        internal struct Instance
+        private readonly struct InstanceID : IEquatable<InstanceID>
         {
-            public int instanceID;
+#if INSTANCE_ASSET_STREAMING
+            public readonly AssetBundleLoader<GameObject> Loader;
+            
+            public InstanceID(in Prefab prefab)
+            {
+                Loader = new AssetBundleLoader<GameObject>(
+                    prefab.gameObjectName, 
+                    prefab.assetFilename, 
+                    assetManager);
+            }
+
+            public bool Equals(InstanceID other)
+            {
+                return Loader.Equals(other.Loader);
+            }
+
+            public override int GetHashCode() => Loader.GetHashCode();
+#else
+            public readonly int Value;
+
+            public InstanceID(in Prefab prefab)
+            {
+                Value = prefab.gameObject.GetInstanceID();
+            }
+
+            public bool Equals(InstanceID other)
+            {
+                return Value == other.Value;
+            }
+
+            public override int GetHashCode() => Value;
+#endif
+        }
+
+        private class InstanceAsyncOperation
+        {
+            private AsyncInstantiateOperation<GameObject> __asyncInstantiateOperation;
+            
+#if INSTANCE_ASSET_STREAMING
+            private Transform __parent;
+            private AssetBundleLoader<GameObject> __loader;
+            private int __instanceCount;
+#endif
+            
+            public bool isDone
+            {
+                get
+                {
+                    if (gameObjects != null)
+                        return true;
+                    
+                    if (__asyncInstantiateOperation == null)
+                    {
+#if INSTANCE_ASSET_STREAMING
+                        if (!__loader.isDone)
+                            return false;
+
+                        return __Instantiate(__instanceCount, __loader.value, __parent);
+#else
+                        return true;
+#endif
+                    }
+                    
+                    if (__asyncInstantiateOperation.isDone)
+                    {
+                        gameObjects ??= __asyncInstantiateOperation.Result ?? Array.Empty<GameObject>();
+                        
+                        return true;
+                    }
+
+                    return false;
+                }
+            }
+
+            public GameObject[] gameObjects
+            {
+                get;
+
+                private set;
+            }
+
+            public InstanceAsyncOperation(int instanceCount, in InstanceID instanceID, Transform parent)
+            {
+                __asyncInstantiateOperation = null;
+                
+#if INSTANCE_ASSET_STREAMING
+                __parent = parent;
+                __loader = instanceID.Loader;
+                __instanceCount = instanceCount;
+#else
+                __Instantiate(instanceCount, (GameObject)Resources.InstanceIDToObject(instanceID.Value), parent);
+#endif
+            }
+            
+            public void WaitForCompletion() => __asyncInstantiateOperation.WaitForCompletion();
+
+            public void Cancel() => __asyncInstantiateOperation.Cancel();
+
+            private bool __Instantiate(int instanceCount, GameObject prefab, Transform parent)
+            {
+                if (instanceCount > 0)
+                {
+                    if (instanceCount > 1)
+                        __asyncInstantiateOperation = InstantiateAsync(prefab, instanceCount, parent);
+                    else
+                    {
+                        gameObjects = new GameObject[instanceCount];
+                        
+                        for (int i = 0; i < instanceCount; ++i)
+                            gameObjects[i] = Instantiate(prefab.gameObject, parent);
+
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
+        
+        private struct Instance
+        {
+            public InstanceID instanceID;
             public float destroyTime;
             public string destroyMessageName;
 
             public UnityEngine.Object destroyMessageValue;
-            //public InstanceManager manager;
         }
 
         [Serializable]
@@ -25,9 +149,65 @@ namespace ZG
         {
             public string name;
             public string destroyMessageName;
-            public UnityEngine.Object destroyMessageValue;
+            
+#if INSTANCE_ASSET_STREAMING
+            [HideInInspector] 
+            public string gameObjectName;
+            [HideInInspector] 
+            public string assetFilename;
+#endif
+            
+#if UNITY_EDITOR || !INSTANCE_ASSET_STREAMING
             public GameObject gameObject;
+#endif
+            
+            public UnityEngine.Object destroyMessageValue;
             public float destroyTime;
+            
+#if UNITY_EDITOR && INSTANCE_ASSET_STREAMING
+            public bool ToAssetBundleBuild(Dictionary<string, List<string>> assetNameMap)
+            {
+                string assetPath = UnityEditor.AssetDatabase.GetAssetPath(gameObject);
+                bool result = false;
+                string assetBundleName;
+                foreach (var pair in assetNameMap)
+                {
+                    if (pair.Value.Contains(assetPath))
+                    {
+                        assetBundleName = pair.Key;
+                        if (assetBundleName != assetFilename)
+                        {
+                            assetFilename = assetBundleName;
+                            
+                            result = true;
+                        }
+
+                        break;
+                    }
+                }
+
+                if (!result)
+                {
+                    if (!assetNameMap.TryGetValue(name, out var assetBundleNames))
+                    {
+                        assetBundleNames = new List<string>();
+
+                        assetNameMap[name] = assetBundleNames;
+                    }
+                    
+                    assetBundleNames.Add(assetPath);
+                }
+
+                if (assetPath != gameObjectName)
+                {
+                    gameObjectName = assetPath;
+
+                    result = true;
+                }
+
+                return result;
+            }
+#endif
         }
 
         [Serializable]
@@ -36,18 +216,18 @@ namespace ZG
 
         }
 
-        internal sealed class Factory : MonoBehaviour
+        private sealed class Factory : MonoBehaviour
         {
             [Flags]
-            public enum InstancesFlag
+            private enum InstancesFlag
             {
                 New = 0x01
             }
 
             private struct InstanceToDestroy
             {
-                public int instanceID;
                 public double time;
+                public InstanceID instanceID;
                 public GameObject gameObject;
             }
 
@@ -56,8 +236,8 @@ namespace ZG
                 public InstancesFlag flag;
                 public int entityCount;
                 public Instance instance;
-                public AsyncInstantiateOperation<GameObject> asyncInstantiateOperation;
-                public InstanceManager instanceManager;
+                public InstanceAsyncOperation asyncOperation;
+                public InstanceManager manager;
 
                 public int Submit(
                     int maxEntityCount,
@@ -73,16 +253,16 @@ namespace ZG
                         return 0;
                     }
 
-                    if (asyncInstantiateOperation != null && asyncInstantiateOperation.isDone)
+                    if (asyncOperation != null && asyncOperation.isDone)
                     {
-                        bool isDone = asyncInstantiateOperation.isDone;
+                        bool isDone = asyncOperation.isDone;
                         if (!isDone && maxEntityCount == int.MaxValue)
                         {
                             isDone = true;
 
                             UnityEngine.Profiling.Profiler.BeginSample("WaitForCompletion");
 
-                            asyncInstantiateOperation.WaitForCompletion();
+                            asyncOperation.WaitForCompletion();
 
                             UnityEngine.Profiling.Profiler.EndSample();
                         }
@@ -91,7 +271,7 @@ namespace ZG
                         {
                             UnityEngine.Profiling.Profiler.BeginSample("AsyncInstantiateOperation Done");
 
-                            var results = asyncInstantiateOperation.Result;
+                            var results = asyncOperation.gameObjects;
                             int numResults = results == null ? 0 : results.Length;
                             if (numResults > 0)
                             {
@@ -102,13 +282,13 @@ namespace ZG
                                 for (int i = 0; i < numResults; ++i)
                                     gameObjects[entityIndex - i] = results[i];
 
-                                if (instanceManager != null)
+                                if (manager != null)
                                 {
                                     if (__instanceManagers == null)
                                         __instanceManagers = new Dictionary<int, InstanceManager>();
 
-                                    if (instanceManager.__instances == null)
-                                        instanceManager.__instances = new Dictionary<int, Instance>();
+                                    if (manager.__instances == null)
+                                        manager.__instances = new Dictionary<int, Instance>();
 
                                     int transformInstanceID;
                                     for (int i = 0; i < numResults; ++i)
@@ -119,14 +299,14 @@ namespace ZG
 
                                         transformInstanceID = result.transform.GetInstanceID();
 
-                                        __instanceManagers.Add(transformInstanceID, instanceManager);
+                                        __instanceManagers.Add(transformInstanceID, manager);
 
-                                        instanceManager.__instances.Add(transformInstanceID, instance);
+                                        manager.__instances.Add(transformInstanceID, instance);
                                     }
                                 }
                             }
 
-                            asyncInstantiateOperation = null;
+                            asyncOperation = null;
 
                             UnityEngine.Profiling.Profiler.EndSample();
                         }
@@ -140,7 +320,7 @@ namespace ZG
                     for (int i = 0; i < entityCount; ++i)
                     {
                         index = i + startIndex;
-                        if (gameObjects[index] == null && asyncInstantiateOperation != null)
+                        if (gameObjects[index] == null && asyncOperation != null)
                         {
                             entityCount = i;
 
@@ -266,16 +446,16 @@ namespace ZG
 
                     foreach (var instance in __instances)
                     {
-                        if (instance.asyncInstantiateOperation == null)
+                        if (instance.asyncOperation == null)
                             continue;
 
-                        if (instance.asyncInstantiateOperation.isDone)
+                        if (instance.asyncOperation.isDone)
                         {
-                            foreach (var gameObject in instance.asyncInstantiateOperation.Result)
+                            foreach (var gameObject in instance.asyncOperation.gameObjects)
                                 DestroyImmediate(gameObject);
                         }
                         else
-                            instance.asyncInstantiateOperation.Cancel();
+                            instance.asyncOperation.Cancel();
                     }
                 }
 
@@ -283,8 +463,8 @@ namespace ZG
                     in Instance instance,
                     in NativeArray<Entity> entities,
                     IEnumerable<GameObject> results,
-                    AsyncInstantiateOperation<GameObject> asyncInstantiateOperation,
-                    InstanceManager instanceManager)
+                    InstanceAsyncOperation asyncOperation,
+                    InstanceManager manager)
                 {
                     __entities.AddRange(entities);
 
@@ -301,8 +481,8 @@ namespace ZG
 
                     result.flag = InstancesFlag.New;
                     result.instance = instance;
-                    result.asyncInstantiateOperation = asyncInstantiateOperation;
-                    result.instanceManager = instanceManager;
+                    result.asyncOperation = asyncOperation;
+                    result.manager = manager;
 
                     __instances.Add(result);
                 }
@@ -397,8 +577,8 @@ namespace ZG
                 in Instance instance,
                 in NativeArray<Entity> entities,
                 IEnumerable<GameObject> results,
-                AsyncInstantiateOperation<GameObject> asyncInstantiateOperation,
-                InstanceManager instanceManager,
+                InstanceAsyncOperation asyncOperation,
+                InstanceManager manager,
                 SystemBase system)
             {
                 if (!__systems.TryGetValue(system, out var value))
@@ -408,16 +588,16 @@ namespace ZG
                     __systems[system] = value;
                 }
 
-                value.Apply(instance, entities, results, asyncInstantiateOperation, instanceManager);
+                value.Apply(instance, entities, results, asyncOperation, manager);
             }
 
-            public void Destroy(int instanceID, float time, GameObject gameObject)
+            public void Destroy(in InstanceID instanceID, float time, GameObject gameObject)
             {
                 if (time > Mathf.Epsilon)
                 {
                     InstanceToDestroy instance;
-                    instance.instanceID = instanceID;
                     instance.time = Time.timeAsDouble + time;
+                    instance.instanceID = instanceID;
                     instance.gameObject = gameObject;
 
                     if (__instancesToDestroy == null)
@@ -473,19 +653,58 @@ namespace ZG
         internal StringEvent _onActiveCount;
 
         //public UnityEngine.Object TEMP;
-        [SerializeField] internal Prefab[] _prefabs;
+        [SerializeField] 
+        internal Prefab[] _prefabs;
 
         private static Dictionary<string, (InstanceManager, int)> __prefabIndices;
 
-        private static Dictionary<int, List<GameObject>> __gameObjects;
+        private static Dictionary<InstanceID, List<GameObject>> __gameObjects;
 
         private static Dictionary<int, InstanceManager> __instanceManagers;
 
         private Dictionary<int, Instance> __instances;
+        
+#if INSTANCE_ASSET_STREAMING
+        public static AssetManager assetManager;
+#endif
 
         //private HashSet<AsyncInstantiateOperation<GameObject>> __results;
 
         public static int activeCount { get; private set; }
+
+#if UNITY_EDITOR && INSTANCE_ASSET_STREAMING
+        public static void ToAssetBundleBuild(Dictionary<string, List<string>> assetNameMap)
+        {
+            string[] guids = UnityEditor.AssetDatabase.FindAssets("t:prefab");
+            string path;
+            GameObject gameObject;
+            int i, j, numPrefabs, numGuids = guids == null ? 0 : guids.Length;
+            bool result;
+            for (i = 0; i < numGuids; ++i)
+            {
+                if (UnityEditor.EditorUtility.DisplayCancelableProgressBar("Collect Instance Manager", i.ToString() + "/" + numGuids, i * 1.0f / numGuids))
+                    break;
+
+                path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[i]);
+                gameObject = UnityEditor.PrefabUtility.LoadPrefabContents(path);
+
+                result = false;
+                foreach (var instanceManager in gameObject.GetComponentsInChildren<InstanceManager>(true))
+                {
+                    numPrefabs = instanceManager._prefabs == null ? 0 : instanceManager._prefabs.Length;
+                    for (j = 0; j < numPrefabs; ++j)
+                        result = instanceManager._prefabs[j].ToAssetBundleBuild(assetNameMap) || result;
+                }
+
+                if(result)
+                    UnityEditor.PrefabUtility.SaveAsPrefabAsset(gameObject, path);
+                
+                UnityEditor.PrefabUtility.UnloadPrefabContents(gameObject);
+            }
+
+            UnityEditor.EditorUtility.ClearProgressBar();
+        }
+#endif
 
         public static void Destroy(int instanceID, bool isSendMessage)
         {
@@ -539,7 +758,8 @@ namespace ZG
             //ComponentLookup<LocalToWorld> localToWorlds
         )
         {
-            int numGameObjects, numEntities = entities.Length, instanceID = prefab.gameObject.GetInstanceID();
+            int numGameObjects, numEntities = entities.Length;
+            var instanceID = new InstanceID(prefab);
             List<GameObject> results = null;
             if (__gameObjects != null && __gameObjects.TryGetValue(instanceID, out var gameObjects))
             {
@@ -574,48 +794,16 @@ namespace ZG
                 numGameObjects = numEntities;
 
             Instance instance;
-            instance.instanceID = prefab.gameObject.GetInstanceID();
+            instance.instanceID = instanceID;
             instance.destroyTime = prefab.destroyTime;
             instance.destroyMessageName = prefab.destroyMessageName;
             instance.destroyMessageValue = prefab.destroyMessageValue;
 
-            AsyncInstantiateOperation<GameObject> asyncInstantiateOperation = null;
+            /*AsyncInstantiateOperation<GameObject> asyncInstantiateOperation = null;
             if (numGameObjects > 0)
             {
                 if (numGameObjects > 1)
-                {
                     asyncInstantiateOperation = InstantiateAsync(prefab.gameObject, numGameObjects, this.transform);
-
-                    /*if (__results == null)
-                        __results = new HashSet<AsyncInstantiateOperation<GameObject>>();
-
-                    __results.Add(result);
-
-                    yield return result;
-
-                    __results.Remove(result);
-
-                    if (__instanceManagers == null)
-                        __instanceManagers = new Dictionary<int, InstanceManager>();
-
-                    if (__instances == null)
-                        __instances = new Dictionary<int, Instance>();
-
-                    if (results == null)
-                        results = new List<GameObject>(numGameObjects);
-
-                    int transformInstanceID;
-                    foreach (var temp in result.Result)
-                    {
-                        transformInstanceID = temp.transform.GetInstanceID();
-
-                        __instanceManagers.Add(transformInstanceID, this);
-
-                        __instances.Add(transformInstanceID, instance);
-
-                        results.Add(temp);
-                    }*/
-                }
                 else
                 {
                     int transformInstanceID;
@@ -641,87 +829,17 @@ namespace ZG
 
                         results.Add(result);
                     }
-
-                    //Wait For LocalToWorld
-                    //yield return new WaitForEndOfFrame();
                 }
-            }
-            //else
-            //Wait For LocalToWorld
-            //yield return new WaitForEndOfFrame();
+            }*/
 
             Factory.instance.Create(
                 instance,
                 entities,
                 results,
-                asyncInstantiateOperation,
+                numGameObjects > 0 ? new InstanceAsyncOperation(numGameObjects, instanceID, transform) : null, 
+                //asyncInstantiateOperation,
                 this,
                 system);
-
-            /*Entity entity;
-            var entityManager = system.EntityManager;
-            for (int i = 0; i < numEntities; ++i)
-            {
-                entity = entities[i];
-                if (entityManager.IsEnabled(entity) &&
-                    entityManager.HasComponent<global::Instance>(entity) &&
-                    //entityManager.IsComponentEnabled<global::Instance>(entity) &&
-                    results[i] != null)
-                    continue;
-
-                __Destroy(results[i], prefab.gameObject);
-
-                results.RemoveAtSwapBack(i);
-
-                entities[i--] = entities[--numEntities];
-            }
-
-            if(numEntities < 1)
-                yield break;
-
-            system.EntityManager.AddComponent<CopyMatrixToTransformInstanceID>(entities.GetSubArray(0, numEntities));
-
-            instanceIDs.Update(system);
-            localToWorlds.Update(system);
-            CopyMatrixToTransformInstanceID instanceID;
-            instanceID.isSendMessageOnDestroy = true;
-
-            GameObject gameObject;
-            Transform transform;
-            LocalToWorld localToWorld;
-            for (int i = 0; i < numEntities; ++i)
-            {
-                gameObject = results[i];
-
-                UnityEngine.Assertions.Assert.IsTrue(gameObject.name.Contains(prefab.gameObject.name));
-
-                transform = gameObject.transform;
-
-                entity = entities[i];
-
-    #if UNITY_EDITOR
-                entityManager.SetName(entity, $"{gameObject.name}({transform.GetInstanceID()})");
-    #endif
-
-                if (localToWorlds.TryGetComponent(entity, out localToWorld))
-                {
-                    transform.localPosition = localToWorld.Position;
-                    transform.localRotation = localToWorld.Rotation;
-                }
-
-                gameObject.SetActive(true);
-
-                instanceID.value = transform.GetInstanceID();
-
-                instanceIDs[entity] = instanceID;
-            }
-
-            entities.Dispose();
-
-            activeCount += numEntities;
-
-            if(_onAcitveCount != null)
-                _onAcitveCount.Invoke(activeCount.ToString());*/
         }
 
         private void __Destroy(int instanceID, Instance instance, bool isSendMessage)
@@ -748,13 +866,13 @@ namespace ZG
                 __Destroy(gameObject, instance.instanceID);
         }
 
-        private static void __Destroy(GameObject gameObject, int instanceID)
+        private static void __Destroy(GameObject gameObject, in InstanceID instanceID)
         {
             if (gameObject == null)
                 return;
 
             if (__gameObjects == null)
-                __gameObjects = new Dictionary<int, List<GameObject>>();
+                __gameObjects = new Dictionary<InstanceID, List<GameObject>>();
 
             if (!__gameObjects.TryGetValue(instanceID, out var gameObjects))
             {
@@ -776,10 +894,11 @@ namespace ZG
             int numPrefabs = _prefabs.Length;
             for (int i = 0; i < numPrefabs; ++i)
             {
+#if UNITY_EDITOR
                 UnityEngine.Assertions.Assert.IsNotNull(_prefabs[i].gameObject, $"{_prefabs[i].name} 不能为空！");
                 UnityEngine.Assertions.Assert.IsFalse(_prefabs[i].gameObject.activeSelf, $"{_prefabs[i].name} 默认必须关闭！");
                 UnityEngine.Assertions.Assert.IsNull(_prefabs[i].gameObject.GetComponentInChildren<Collider>(true), $"{_prefabs[i].name} 包含碰撞体!");
-
+#endif
                 __prefabIndices.Add(_prefabs[i].name, (this, i));
             }
         }
@@ -805,7 +924,8 @@ namespace ZG
 
             if (__instances != null)
             {
-                int i, numGameObjects, gameObjectInstanceID, transformInstanceID;
+                int i, numGameObjects, transformInstanceID;
+                InstanceID instanceID;
                 Transform transform;
                 GameObject gameObject;
                 List<GameObject> gameObjects;
@@ -815,8 +935,8 @@ namespace ZG
 
                     __instanceManagers.Remove(transformInstanceID);
 
-                    gameObjectInstanceID = pair.Value.instanceID;
-                    if (__gameObjects != null && __gameObjects.TryGetValue(gameObjectInstanceID, out gameObjects))
+                    instanceID = pair.Value.instanceID;
+                    if (__gameObjects != null && __gameObjects.TryGetValue(instanceID, out gameObjects))
                     {
                         numGameObjects = gameObjects.Count;
                         for (i = 0; i < numGameObjects; ++i)
@@ -827,7 +947,7 @@ namespace ZG
                                 gameObjects.RemoveAt(i);
 
                                 if (numGameObjects == 1)
-                                    __gameObjects.Remove(gameObjectInstanceID);
+                                    __gameObjects.Remove(instanceID);
 
                                 break;
                             }

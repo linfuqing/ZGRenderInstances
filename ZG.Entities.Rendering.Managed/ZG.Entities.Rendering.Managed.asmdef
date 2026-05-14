@@ -9,7 +9,8 @@
         "GUID:734d92eba21c94caba915361bd5ac177",
         "GUID:8819f35a0fc84499b990e90a4ca1911f",
         "GUID:a5baed0c9693541a5bd947d336ec7659",
-        "GUID:5f3cf485eb0554709a8abbeace890c86"
+        "GUID:5f3cf485eb0554709a8abbeace890c86",
+        "GUID:38d5088b410fc4249bce1feefb7adf85"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -18,6 +19,12 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "cn.com.zerogame.unitypackages.assets",
+            "expression": "",
+            "define": "ZG_ASSET_STREAMING"
+        }
+    ],
     "noEngineReferences": false
 }

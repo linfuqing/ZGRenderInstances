@@ -1,0 +1,23 @@
+{
+    "name": "ZG.Entities.Rendering.Managed.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:f2d797eb7cb43ec4288cf0d7805c30a9",
+        "GUID:fb7ea9bad8a0cfe4e9e46097d9861c85"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "cn.com.zerogame.unitypackages.assets",
+            "expression": "",
+            "define": "ZG_ASSET_STREAMING"
+        }
+    ],
+    "noEngineReferences": false
+}
