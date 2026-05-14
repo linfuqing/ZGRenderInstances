@@ -125,7 +125,7 @@ namespace ZG
                         gameObjects = new GameObject[instanceCount];
                         
                         for (int i = 0; i < instanceCount; ++i)
-                            gameObjects[i] = Instantiate(prefab.gameObject, parent);
+                            gameObjects[i] = Instantiate(prefab, parent);
 
                         return true;
                     }
