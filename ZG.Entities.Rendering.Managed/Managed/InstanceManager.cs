@@ -32,6 +32,11 @@ namespace ZG
                     assetManager);
             }
 
+            public void Dispose()
+            {
+                Loader.Dispose();
+            }
+
             public bool Equals(InstanceID other)
             {
                 return Loader.Equals(other.Loader);
@@ -44,6 +49,10 @@ namespace ZG
             public InstanceID(in Prefab prefab)
             {
                 Value = prefab.gameObject.GetInstanceID();
+            }
+
+            public void Dispose()
+            {
             }
 
             public bool Equals(InstanceID other)
@@ -163,6 +172,9 @@ namespace ZG
 #endif
             
 #if UNITY_EDITOR || !INSTANCE_ASSET_STREAMING
+#if INSTANCE_ASSET_STREAMING
+            [NonSerialized]
+#endif
             public GameObject gameObject;
 #endif
             
@@ -966,6 +978,9 @@ namespace ZG
                                 break;
                             }
                         }
+
+                        if (gameObjects.Count < 1)
+                            instanceID.Dispose();
                     }
 
                     transform = Resources.InstanceIDToObject(transformInstanceID) as Transform;
