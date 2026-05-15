@@ -184,7 +184,7 @@ namespace ZG
 #if UNITY_EDITOR && INSTANCE_ASSET_STREAMING
             public bool ToAssetBundleBuild(Dictionary<string, List<string>> assetNameMap)
             {
-                string assetPath = UnityEditor.AssetDatabase.GetAssetPath(gameObject);
+                string assetPath = gameObject == null ? gameObjectName : UnityEditor.AssetDatabase.GetAssetPath(gameObject);
                 bool isDirty = false, isContains = false;
                 string assetBundleName;
                 foreach (var pair in assetNameMap)
@@ -215,6 +215,13 @@ namespace ZG
                     }
                     
                     assetBundleNames.Add(assetPath);
+
+                    if (name != assetFilename)
+                    {
+                        assetFilename = name;
+                        
+                        isDirty = true;
+                    }
                 }
 
                 if (assetPath != gameObjectName)
