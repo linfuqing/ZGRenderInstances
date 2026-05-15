@@ -22,13 +22,18 @@ namespace ZG
             
             public InstanceID(in Prefab prefab)
             {
-                Loader = new AssetBundleLoader<GameObject>(
+                string assetFilename = prefab.assetFilename;
+                
 #if UNITY_EDITOR
-                    UnityEditor.AssetDatabase.GetAssetPath(prefab.gameObject),
-#else
-                    prefab.gameObjectName, 
+                if (prefab.gameObject != null)
+                    assetFilename = UnityEditor.AssetDatabase.GetAssetPath(prefab.gameObject);
 #endif
-                    prefab.assetFilename, 
+                if (assetManager != null)
+                    assetFilename = Path.GetFileNameWithoutExtension(assetFilename).ToLower();
+
+                Loader = new AssetBundleLoader<GameObject>(
+                    assetFilename, 
+                    prefab.gameObjectName,
                     assetManager);
             }
 
@@ -173,7 +178,7 @@ namespace ZG
             
 #if UNITY_EDITOR || !INSTANCE_ASSET_STREAMING
 #if INSTANCE_ASSET_STREAMING
-            [NonSerialized]
+            //[NonSerialized]
 #endif
             public GameObject gameObject;
 #endif
@@ -927,11 +932,11 @@ namespace ZG
             int numPrefabs = _prefabs.Length;
             for (int i = 0; i < numPrefabs; ++i)
             {
-#if UNITY_EDITOR
+/*#if UNITY_EDITOR
                 UnityEngine.Assertions.Assert.IsNotNull(_prefabs[i].gameObject, $"{_prefabs[i].name} 不能为空！");
                 UnityEngine.Assertions.Assert.IsFalse(_prefabs[i].gameObject.activeSelf, $"{_prefabs[i].name} 默认必须关闭！");
                 UnityEngine.Assertions.Assert.IsNull(_prefabs[i].gameObject.GetComponentInChildren<Collider>(true), $"{_prefabs[i].name} 包含碰撞体!");
-#endif
+#endif*/
                 __prefabIndices.Add(_prefabs[i].name, (this, i));
             }
         }
