@@ -177,8 +177,8 @@ namespace ZG
 #endif
             
 #if UNITY_EDITOR || !INSTANCE_ASSET_STREAMING
-#if INSTANCE_ASSET_STREAMING
-            //[NonSerialized]
+#if INSTANCE_ASSET_STREAMING && !UNITY_EDITOR
+            [NonSerialized]
 #endif
             public GameObject gameObject;
 #endif
