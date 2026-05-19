@@ -985,14 +985,15 @@ namespace ZG
                                 gameObjects.RemoveAt(i);
 
                                 if (numGameObjects == 1)
+                                {
                                     __gameObjects.Remove(instanceID);
+                                    
+                                    instanceID.Dispose();
+                                }
 
                                 break;
                             }
                         }
-
-                        if (gameObjects.Count < 1)
-                            instanceID.Dispose();
                     }
 
                     transform = Resources.InstanceIDToObject(transformInstanceID) as Transform;
