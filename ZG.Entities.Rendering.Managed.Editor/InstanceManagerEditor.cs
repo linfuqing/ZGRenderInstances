@@ -13,6 +13,8 @@ namespace ZG
     {
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
         {
+            EditorGUI.BeginProperty(position, label, property);
+            
             float singleLineHeight = EditorGUIUtility.singleLineHeight;
             position.height = singleLineHeight;
             EditorGUI.PropertyField(position, property.FindPropertyRelative("name"));
@@ -38,6 +40,13 @@ namespace ZG
             
             position.y += singleLineHeight;
             EditorGUI.PropertyField(position, property.FindPropertyRelative("destroyTime"));
+            
+            EditorGUI.EndProperty();
+        }
+
+        public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
+        {
+            return property.isExpanded ? EditorGUIUtility.singleLineHeight * 5.0f : EditorGUIUtility.singleLineHeight;
         }
     }
 }
