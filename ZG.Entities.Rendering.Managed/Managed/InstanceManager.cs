@@ -13,6 +13,74 @@ using UnityEngine.Events;
 
 namespace ZG
 {
+
+    [Serializable]
+    public struct InstanceManagedPrefab
+    {
+        public string name;
+        public string destroyMessageName;
+
+#if UNITY_EDITOR || INSTANCE_ASSET_STREAMING
+        [HideInInspector] 
+        public string gameObjectName;
+        [HideInInspector] 
+        public string assetFilename;
+#endif
+
+#if !INSTANCE_ASSET_STREAMING
+        public GameObject gameObject;
+#endif
+
+        public UnityEngine.Object destroyMessageValue;
+        public float destroyTime;
+
+#if UNITY_EDITOR && INSTANCE_ASSET_STREAMING
+        public bool ToAssetBundleBuild(Dictionary<string, List<string>> assetNameMap)
+        {
+            bool isDirty = false, isContains = false;
+            string assetBundleName;
+            foreach (var pair in assetNameMap)
+            {
+                if (pair.Value.Contains(gameObjectName))
+                {
+                    assetBundleName = pair.Key;
+                    if (assetBundleName != assetFilename)
+                    {
+                        assetFilename = assetBundleName;
+
+                        isDirty = true;
+                    }
+
+                    isContains = true;
+
+                    break;
+                }
+            }
+
+            if (!isContains)
+            {
+                if (!assetNameMap.TryGetValue(name, out var assetBundleNames))
+                {
+                    assetBundleNames = new List<string>();
+
+                    assetNameMap[name] = assetBundleNames;
+                }
+
+                assetBundleNames.Add(gameObjectName);
+
+                if (name != assetFilename)
+                {
+                    assetFilename = name;
+
+                    isDirty = true;
+                }
+            }
+
+            return isDirty;
+        }
+#endif
+    }
+
     public sealed class InstanceManager : MonoBehaviour
     {
         private readonly struct InstanceID : IEquatable<InstanceID>
@@ -20,20 +88,16 @@ namespace ZG
 #if INSTANCE_ASSET_STREAMING
             public readonly AssetBundleLoader<GameObject> Loader;
             
-            public InstanceID(in Prefab prefab)
+            public InstanceID(in InstanceManagedPrefab prefab)
             {
-                string assetFilename = prefab.assetFilename;
+                string gameObjectName = prefab.gameObjectName;
                 
-#if UNITY_EDITOR
-                if (prefab.gameObject != null)
-                    assetFilename = UnityEditor.AssetDatabase.GetAssetPath(prefab.gameObject);
-#endif
                 if (assetManager != null)
-                    assetFilename = Path.GetFileNameWithoutExtension(assetFilename).ToLower();
+                    gameObjectName = Path.GetFileNameWithoutExtension(gameObjectName).ToLower();
 
                 Loader = new AssetBundleLoader<GameObject>(
-                    assetFilename, 
-                    prefab.gameObjectName,
+                    prefab.assetFilename, 
+                    gameObjectName,
                     assetManager);
             }
 
@@ -161,84 +225,6 @@ namespace ZG
             public string destroyMessageName;
 
             public UnityEngine.Object destroyMessageValue;
-        }
-
-        [Serializable]
-        internal struct Prefab
-        {
-            public string name;
-            public string destroyMessageName;
-            
-#if UNITY_EDITOR || INSTANCE_ASSET_STREAMING
-            [HideInInspector] 
-            public string gameObjectName;
-            [HideInInspector] 
-            public string assetFilename;
-#endif
-            
-#if UNITY_EDITOR || !INSTANCE_ASSET_STREAMING
-#if INSTANCE_ASSET_STREAMING && !UNITY_EDITOR
-            [NonSerialized]
-#endif
-            public GameObject gameObject;
-#endif
-            
-            public UnityEngine.Object destroyMessageValue;
-            public float destroyTime;
-            
-#if UNITY_EDITOR && INSTANCE_ASSET_STREAMING
-            public bool ToAssetBundleBuild(Dictionary<string, List<string>> assetNameMap)
-            {
-                string assetPath = gameObject == null ? gameObjectName : UnityEditor.AssetDatabase.GetAssetPath(gameObject);
-                bool isDirty = false, isContains = false;
-                string assetBundleName;
-                foreach (var pair in assetNameMap)
-                {
-                    if (pair.Value.Contains(assetPath))
-                    {
-                        assetBundleName = pair.Key;
-                        if (assetBundleName != assetFilename)
-                        {
-                            assetFilename = assetBundleName;
-                            
-                            isDirty = true;
-                        }
-
-                        isContains = true;
-
-                        break;
-                    }
-                }
-
-                if (!isContains)
-                {
-                    if (!assetNameMap.TryGetValue(name, out var assetBundleNames))
-                    {
-                        assetBundleNames = new List<string>();
-
-                        assetNameMap[name] = assetBundleNames;
-                    }
-                    
-                    assetBundleNames.Add(assetPath);
-
-                    if (name != assetFilename)
-                    {
-                        assetFilename = name;
-                        
-                        isDirty = true;
-                    }
-                }
-
-                if (assetPath != gameObjectName)
-                {
-                    gameObjectName = assetPath;
-
-                    isDirty = true;
-                }
-
-                return isDirty;
-            }
-#endif
         }
 
         [Serializable]
@@ -685,7 +671,7 @@ namespace ZG
 
         //public UnityEngine.Object TEMP;
         [SerializeField] 
-        internal Prefab[] _prefabs;
+        internal InstanceManagedPrefab[] _prefabs;
 
         private static Dictionary<string, (InstanceManager, int)> __prefabIndices;
 
@@ -780,21 +766,14 @@ namespace ZG
             //manager.StartCoroutine(
             manager.__Instantiate(
                 manager._prefabs[prefabIndex.Item2],
-                system,
-                entities //,
-                //instanceIDs,
-                //localToWorlds
-            );
-            //);
+                entities, 
+                system);
         }
 
         private void __Instantiate(
-            Prefab prefab,
-            SystemBase system,
-            NativeArray<Entity> entities
-            //ComponentLookup<CopyMatrixToTransformInstanceID> instanceIDs, 
-            //ComponentLookup<LocalToWorld> localToWorlds
-        )
+            in InstanceManagedPrefab prefab,
+            in NativeArray<Entity> entities, 
+            SystemBase system)
         {
             int numGameObjects, numEntities = entities.Length;
             var instanceID = new InstanceID(prefab);
