@@ -43,7 +43,7 @@ namespace ZG
             {
                 if (pair.Value.Contains(gameObjectName))
                 {
-                    assetBundleName = pair.Key;
+                    assetBundleName = pair.Key.ToLower();
                     if (assetBundleName != assetFilename)
                     {
                         assetFilename = assetBundleName;
@@ -59,18 +59,19 @@ namespace ZG
 
             if (!isContains)
             {
-                if (!assetNameMap.TryGetValue(name, out var assetBundleNames))
+                assetBundleName = name.ToLower();
+                if (!assetNameMap.TryGetValue(assetBundleName, out var assetBundleNames))
                 {
                     assetBundleNames = new List<string>();
 
-                    assetNameMap[name] = assetBundleNames;
+                    assetNameMap[assetBundleName] = assetBundleNames;
                 }
 
                 assetBundleNames.Add(gameObjectName);
 
-                if (name != assetFilename)
+                if (assetBundleName != assetFilename)
                 {
-                    assetFilename = name;
+                    assetFilename = assetBundleName;
 
                     isDirty = true;
                 }
@@ -96,7 +97,7 @@ namespace ZG
                     gameObjectName = Path.GetFileNameWithoutExtension(gameObjectName).ToLower();
 
                 Loader = new AssetBundleLoader<GameObject>(
-                    prefab.assetFilename, 
+                    prefab.assetFilename.ToLower(), 
                     gameObjectName,
                     assetManager);
             }
