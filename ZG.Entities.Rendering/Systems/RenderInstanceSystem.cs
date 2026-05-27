@@ -700,8 +700,8 @@ namespace ZG
 
                 if (entityCountToDestroy-- > 0)
                     __cameraEntities[camera] = entities[entityCountToDestroy];
-
-                ++entityCountToCreate;
+                else
+                    ++entityCountToCreate;
             }
 
             if (entityCountToDestroy > 0)
@@ -735,6 +735,8 @@ namespace ZG
                     
                     __renderLists[entity] = new RenderList(camera.GetInstanceID(), Allocator.Persistent);
                 }
+                
+                UnityEngine.Assertions.Assert.AreEqual(0, entityCountToCreate);
             }
             else
                 __renderLists.Update(__system);
