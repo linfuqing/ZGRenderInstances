@@ -587,8 +587,8 @@ namespace ZG
         
         private readonly EntityArchetype __cameraEntityArchetype;
         private readonly SystemBase __system;
-        private readonly Dictionary<object, Entity> __cameraEntities = new Dictionary<object, Entity>();
-        private static readonly List<object> __camerasList = new List<object>();
+        private readonly Dictionary<int, Entity> __cameraEntities = new Dictionary<int, Entity>();
+        private static readonly List<int> __camerasInstanceIDs = new List<int>();
 
         public bool isBegin
         {
@@ -662,27 +662,27 @@ namespace ZG
 
             NativeList<Entity> entities = default;
             
-            __camerasList.Clear();
+            __camerasInstanceIDs.Clear();
 
             int i;
-            foreach (var cameraObject in __cameraEntities.Keys)
+            foreach (var cameraInstanceID in __cameraEntities.Keys)
             {
                 for (i = 0; i < allCamerasCount; ++i)
                 {
-                    if ((object)__cameras[i] == cameraObject)
+                    if (__cameras[i].GetInstanceID() == cameraInstanceID)
                         break;
                 }
 
                 if (i < allCamerasCount)
                     continue;
 
-                __camerasList.Add(cameraObject);
+                __camerasInstanceIDs.Add(cameraInstanceID);
             }
 
             Entity entity;
-            foreach (var cameraToDelete in __camerasList)
+            foreach (var camerasInstanceID in __camerasInstanceIDs)
             {
-                __cameraEntities.Remove(cameraToDelete, out entity);
+                __cameraEntities.Remove(camerasInstanceID, out entity);
                 
                 if (!entities.IsCreated)
                     entities = new NativeList<Entity>(Allocator.Temp);
@@ -691,15 +691,16 @@ namespace ZG
             }
 
             Camera camera;
-            int entityCountToDestroy = entities.IsCreated ? entities.Length : 0, entityCountToCreate = 0;
+            int instanceID, entityCountToDestroy = entities.IsCreated ? entities.Length : 0, entityCountToCreate = 0;
             for (i = 0; i < allCamerasCount; ++i)
             {
                 camera = __cameras[i];
-                if(__cameraEntities.ContainsKey(camera))
+                instanceID = camera.GetInstanceID();
+                if(__cameraEntities.ContainsKey(instanceID))
                     continue;
 
                 if (entityCountToDestroy-- > 0)
-                    __cameraEntities[camera] = entities[entityCountToDestroy];
+                    __cameraEntities[instanceID] = entities[entityCountToDestroy];
                 else
                     ++entityCountToCreate;
             }
@@ -727,13 +728,14 @@ namespace ZG
                 for (i = 0; i < allCamerasCount; ++i)
                 {
                     camera = __cameras[i];
-                    if(__cameraEntities.ContainsKey(camera))
+                    instanceID = camera.GetInstanceID();
+                    if(__cameraEntities.ContainsKey(instanceID))
                         continue;
 
                     entity = entities[--entityCountToCreate];
-                    __cameraEntities[camera] = entity;
+                    __cameraEntities[instanceID] = entity;
                     
-                    __renderLists[entity] = new RenderList(camera.GetInstanceID(), Allocator.Persistent);
+                    __renderLists[entity] = new RenderList(instanceID, Allocator.Persistent);
                 }
                 
                 UnityEngine.Assertions.Assert.AreEqual(0, entityCountToCreate);
@@ -754,7 +756,8 @@ namespace ZG
             for (i = 0; i < allCamerasCount; ++i)
             {
                 camera = __cameras[i];
-                entity = __cameraEntities[camera];
+                instanceID = camera.GetInstanceID();
+                entity = __cameraEntities[instanceID];
 
                 constantBuffers = __constantBuffers[entity];
                 __renderLists.GetRefRW(entity).ValueRW.Begin(
@@ -784,9 +787,9 @@ namespace ZG
             isBegin = false;
         }
 
-        public bool Apply(Camera camera, CommandBuffer commandBuffer)
+        public bool Apply(int cameraInstanceID, CommandBuffer commandBuffer)
         {
-            if (!__cameraEntities.TryGetValue(camera, out Entity entity))
+            if (!__cameraEntities.TryGetValue(cameraInstanceID, out Entity entity))
             {
                 if (isBegin)
                     End();
@@ -825,7 +828,7 @@ namespace ZG
         private EntityQuery __constantTypeGroup;
         private RenderInstanceManager __manager;
 
-        public static bool Apply(Camera camera, CommandBuffer commandBuffer)
+        public static bool Apply(int cameraInstanceID, CommandBuffer commandBuffer)
         {
             var system = World.DefaultGameObjectInjectionWorld?.GetExistingSystemManaged<RenderInstanceSystem>();
             if (system == null)
@@ -834,7 +837,7 @@ namespace ZG
             //if(system.__manager.isBegin)
             //    system.CompleteDependency();
 
-            return system.__manager.Apply(camera, commandBuffer);
+            return system.__manager.Apply(cameraInstanceID, commandBuffer);
         }
         
         protected override void OnCreate()

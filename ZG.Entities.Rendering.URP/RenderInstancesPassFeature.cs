@@ -33,7 +33,7 @@ namespace ZG
                 }*/
                 var cmd = CommandBufferPool.Get();
                 using (new ProfilingScope(cmd, __profilingSampler))
-                    RenderInstanceSystem.Apply(renderingData.cameraData.camera, cmd);
+                    RenderInstanceSystem.Apply(renderingData.cameraData.camera.GetInstanceID(), cmd);
                     
                 context.ExecuteCommandBuffer(cmd);
                 

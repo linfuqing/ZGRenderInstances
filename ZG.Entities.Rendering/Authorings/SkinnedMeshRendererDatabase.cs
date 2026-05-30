@@ -557,6 +557,20 @@ namespace ZG
     [CustomEditor(typeof(SkinnedMeshRendererDatabase))]
     public class SkinnedMeshRendererDatabaseDrawer : Editor
     {
+        [MenuItem("Assets/ZG/Rebuild All SkinnedMeshRendererDatabases")]
+        public static void RebuildAllDatabases()
+        {
+            var guids = AssetDatabase.FindAssets("t:SkinnedMeshRendererDatabase");
+            foreach (var guid in guids)
+            {
+                var database =
+                    AssetDatabase.LoadAssetAtPath<SkinnedMeshRendererDatabase>(AssetDatabase.GUIDToAssetPath(guid));
+                database.Rebuild();
+                
+                EditorUtility.SetDirty(database);
+            }
+        }
+        
         public override void OnInspectorGUI()
         {
             base.OnInspectorGUI();
