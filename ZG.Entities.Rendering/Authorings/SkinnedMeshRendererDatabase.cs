@@ -563,8 +563,19 @@ namespace ZG
             var guids = AssetDatabase.FindAssets("t:SkinnedMeshRendererDatabase");
             foreach (var guid in guids)
             {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                
                 var database =
-                    AssetDatabase.LoadAssetAtPath<SkinnedMeshRendererDatabase>(AssetDatabase.GUIDToAssetPath(guid));
+                    AssetDatabase.LoadAssetAtPath<SkinnedMeshRendererDatabase>(path);
+                
+                foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(path))
+                {
+                    if (asset == database)
+                        continue;
+                    
+                    DestroyImmediate(asset, true);
+                }
+                
                 database.Rebuild();
                 
                 EditorUtility.SetDirty(database);
