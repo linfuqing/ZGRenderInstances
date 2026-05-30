@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Transforms;
@@ -35,6 +36,11 @@ namespace ZG
         public float destroyTime;
 
 #if UNITY_EDITOR && INSTANCE_ASSET_STREAMING
+        public static string ToBase64URL(string text)
+        {
+            return Convert.ToBase64String(Encoding.Default.GetBytes(text)).Replace("=", string.Empty).Replace("+", "-").Replace("/", "_");
+        }
+        
         public bool ToAssetBundleBuild(Dictionary<string, List<string>> assetNameMap)
         {
             bool isDirty = false, isContains = false;
@@ -59,7 +65,7 @@ namespace ZG
 
             if (!isContains)
             {
-                assetBundleName = Uri.EscapeDataString(name.ToLower());
+                assetBundleName = ToBase64URL(name);
                 if (!assetNameMap.TryGetValue(assetBundleName, out var assetBundleNames))
                 {
                     assetBundleNames = new List<string>();
