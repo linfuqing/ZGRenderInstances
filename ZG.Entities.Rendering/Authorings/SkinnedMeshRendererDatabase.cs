@@ -252,7 +252,7 @@ namespace ZG
             var span = pixels.AsSpan(0, pixelCount);
             GenerateAnimationTexture(clips, smr, targetObject, targetFrameRate, ref span);
             
-            return Hash128.Compute(pixels, 0, pixelCount);
+            return HashUtility.Compute((ReadOnlySpan<Color>)span);
         }
 
         public Hash128 GenerateSkinHash(SkinnedMeshRenderer skinnedMeshRenderer)
@@ -473,7 +473,18 @@ namespace ZG
                 }
             }
 
-            bool result = __renderIndices.TryGetValue(GenerateSkinHash(skinnedMeshRenderer), out rendererIndex);
+            var hash = GenerateSkinHash(skinnedMeshRenderer);
+            bool result = __renderIndices.TryGetValue(hash, out rendererIndex);
+            if (result)
+            {
+                ref var renderer = ref _renderers[rendererIndex];
+                skin = renderer.skin;
+                
+                return true;
+            }
+            
+            Rebuild();
+            result = __renderIndices.TryGetValue(hash, out rendererIndex);
             if (result)
             {
                 ref var renderer = ref _renderers[rendererIndex];
