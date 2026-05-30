@@ -59,7 +59,7 @@ namespace ZG
 
             if (!isContains)
             {
-                assetBundleName = name.ToLower();
+                assetBundleName = Uri.EscapeDataString(name.ToLower());
                 if (!assetNameMap.TryGetValue(assetBundleName, out var assetBundleNames))
                 {
                     assetBundleNames = new List<string>();
