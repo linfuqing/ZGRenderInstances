@@ -122,7 +122,7 @@ namespace ZG
 #else
             public readonly int Value;
 
-            public InstanceID(in Prefab prefab)
+            public InstanceID(in InstanceManagedPrefab prefab)
             {
                 Value = prefab.gameObject.GetInstanceID();
             }
