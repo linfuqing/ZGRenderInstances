@@ -241,10 +241,10 @@ namespace UnityEditor.ShaderGraph
                     sb.AppendLine("{");
                     using (sb.IndentScope())
                     {
-                        sb.AppendLine("$precision3x4 skinMatrix = SkinnedInstanceGetMatrix(pixelOffset, indices[i], depth, texelSize, map);");
-                        sb.AppendLine("$precision3 vtransformed = mul(skinMatrix, $precision4(positionIn, 1));");
-                        sb.AppendLine("$precision3 ntransformed = mul(skinMatrix, $precision4(normalIn, 0));");
-                        sb.AppendLine("$precision3 ttransformed = mul(skinMatrix, $precision4(tangentIn, 0));");
+                        sb.AppendLine("float3x4 skinMatrix = SkinnedInstanceGetMatrix(pixelOffset, indices[i], depth, texelSize, map);");
+                        sb.AppendLine("float3 vtransformed = mul(skinMatrix, float4(positionIn, 1));");
+                        sb.AppendLine("half3 ntransformed = mul(skinMatrix, half4(normalIn, 0));");
+                        sb.AppendLine("half3 ttransformed = mul(skinMatrix, half4(tangentIn, 0));");
                         sb.AppendLine("");
                         sb.AppendLine("weight = weights[i];");
                         sb.AppendLine("positionOut += vtransformed * weight;");
@@ -254,10 +254,10 @@ namespace UnityEditor.ShaderGraph
                     }
                     sb.AppendLine("}");
                     
-                    sb.AppendLine("$precision3x4 skinMatrix = SkinnedInstanceGetMatrix(pixelOffset, indices.w, depth, texelSize, map);");
-                    sb.AppendLine("$precision3 vtransformed = mul(skinMatrix, $precision4(positionIn, 1));");
-                    sb.AppendLine("$precision3 ntransformed = mul(skinMatrix, $precision4(normalIn, 0));");
-                    sb.AppendLine("$precision3 ttransformed = mul(skinMatrix, $precision4(tangentIn, 0));");
+                    sb.AppendLine("float3x4 skinMatrix = SkinnedInstanceGetMatrix(pixelOffset, indices.w, depth, texelSize, map);");
+                    sb.AppendLine("float3 vtransformed = mul(skinMatrix, float4(positionIn, 1));");
+                    sb.AppendLine("half3 ntransformed = mul(skinMatrix, half4(normalIn, 0));");
+                    sb.AppendLine("half3 ttransformed = mul(skinMatrix, half4(tangentIn, 0));");
                     sb.AppendLine("");
                     sb.AppendLine("weight = 1.0 - totalWeight;");
                     sb.AppendLine("positionOut += vtransformed * weight;");
