@@ -159,7 +159,7 @@ namespace UnityEditor.ShaderGraph
                 sb.AppendLine("UNITY_INSTANCING_BUFFER_END(SkinnedInstance)");
             });
             
-            registry.ProvideFunction("SkinnedInstanceGetUV", sb =>
+            /*registry.ProvideFunction("SkinnedInstanceGetUV", sb =>
             {
                 sb.AppendLine($"float2 SkinnedInstanceGetUV(uint index, float4 texelSize)");
                 sb.AppendLine("{");
@@ -184,6 +184,42 @@ namespace UnityEditor.ShaderGraph
                     sb.AppendLine("return SAMPLE_TEXTURE2D_ARRAY_LOD(map.tex, map.samplerstate, uv, depth, 0);");
                 }
 
+                sb.AppendLine("}");
+            });*/
+            
+            registry.ProvideFunction("SkinnedInstanceGetUV", sb =>
+            {
+                sb.AppendLine($"uint2 SkinnedInstanceGetUV(uint index, float4 texelSize)");
+                sb.AppendLine("{");
+                using (sb.IndentScope())
+                {
+                    sb.AppendLine("uint z = (uint)texelSize.z;");
+                    sb.AppendLine("uint row = index / z;");
+                    sb.AppendLine("uint col = index % z;");
+                    sb.AppendLine("return uint2(col, row);");
+                }
+
+                sb.AppendLine("}");
+            });
+            
+            registry.ProvideFunction("SkinnedInstanceTex", sb =>
+            {
+                // Use LOAD_TEXTURE2D_ARRAY (texelFetch) for exact texel reads.
+                // texelFetch does not depend on sampler state or wrap mode,
+                // and is fully supported for RGBAFloat textures on WebGL2/GLES3.
+                // The earlier switch to SAMPLE_TEXTURE2D_ARRAY_LOD (textureLod) fixed
+                // a sampler binding issue but introduced a new problem: textureLod with
+                // RGBAFloat textures is not fully guaranteed on all GLES3/WebGL2 devices,
+                // causing some frames to read zero for certain texels.
+                // texelSize = float4(1/width, 1/height, width, height).
+                sb.AppendLine("float4 SkinnedInstanceTex(UnityTexture2DArray map, float4 texelSize, uint index, float depth)");
+                sb.AppendLine("{");
+                using (sb.IndentScope())
+                {
+                    sb.AppendLine("uint2 coord = SkinnedInstanceGetUV(index, texelSize);");
+                    sb.AppendLine("uint sliceIndex = (uint)(depth + 0.5);");
+                    sb.AppendLine("return LOAD_TEXTURE2D_ARRAY(map.tex, coord, sliceIndex);");
+                }
                 sb.AppendLine("}");
             });
             
