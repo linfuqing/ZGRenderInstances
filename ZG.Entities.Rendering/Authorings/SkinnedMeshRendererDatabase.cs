@@ -43,7 +43,9 @@ namespace ZG
             public int clipCount;
         }
 
-        public const int BONE_MATRIX_ROW_COUNT = 3;
+        // Each bone matrix (float3x4) uses 6 texels with RGBA32 half-float encoding:
+        // Each float4 row is encoded as 2 RGBA32 texels (2 half-floats per texel).
+        public const int BONE_MATRIX_ROW_COUNT = 6;
 
         [SerializeField] 
         internal int _targetFrameRate = 30;
@@ -87,6 +89,45 @@ namespace ZG
             }
 
             return null;
+        }
+
+        // Convert IEEE 754 float32 to float16 (half-precision).
+        // Stores 2 half-floats per RGBA32 texel: R,G = first half, B,A = second half.
+        public static ushort FloatToHalf(float value)
+        {
+            byte[] bytes = BitConverter.GetBytes(value);
+            uint f = BitConverter.ToUInt32(bytes, 0);
+            uint sign = (f >> 16) & 0x8000u;
+            uint exponent = (f >> 23) & 0xFFu;
+            uint mantissa = (f >> 13) & 0x3FFu;
+
+            if (exponent == 0)
+                return (ushort)sign; // Zero
+
+            if (exponent == 0xFF)
+                return (ushort)(sign | 0x7C00u); // Infinity/NaN
+
+            int halfExp = (int)exponent - 127 + 15;
+            if (halfExp <= 0)
+                return (ushort)sign; // Underflow to zero
+            if (halfExp >= 31)
+                return (ushort)(sign | 0x7C00u); // Overflow to infinity
+
+            return (ushort)(sign | ((uint)halfExp << 10) | mantissa);
+        }
+
+        // Encode a float4 as 2 consecutive Color32 pixels (2 half-floats per pixel).
+        // Pixel 0: (R,G) = half(f0), (B,A) = half(f1)
+        // Pixel 1: (R,G) = half(f2), (B,A) = half(f3)
+        public static void EncodeFloat4ToColor32(float f0, float f1, float f2, float f3, out Color32 pixel0, out Color32 pixel1)
+        {
+            ushort h0 = FloatToHalf(f0);
+            ushort h1 = FloatToHalf(f1);
+            ushort h2 = FloatToHalf(f2);
+            ushort h3 = FloatToHalf(f3);
+
+            pixel0 = new Color32((byte)(h0 & 0xFF), (byte)(h0 >> 8), (byte)(h1 & 0xFF), (byte)(h1 >> 8));
+            pixel1 = new Color32((byte)(h2 & 0xFF), (byte)(h2 >> 8), (byte)(h3 & 0xFF), (byte)(h3 >> 8));
         }
 
         public static int CalculatedTexturePixels(float clipLength, int boneLength, int targetFrameRate)
@@ -202,7 +243,7 @@ namespace ZG
             SkinnedMeshRenderer smr,
             GameObject targetObject,
             int targetFrameRate,
-            ref Span<Color> pixels)
+            ref Span<Color32> pixels)
         {
             int pixelIndex = 0;
             var bones = smr.bones;
@@ -210,9 +251,15 @@ namespace ZG
             //Setup 0 to bindPoses
             foreach (var boneMatrix in bones.Select((b, idx) => b.localToWorldMatrix * bindposes[idx]))
             {
-                pixels[pixelIndex++] = new Color(boneMatrix.m00, boneMatrix.m01, boneMatrix.m02, boneMatrix.m03);
-                pixels[pixelIndex++] = new Color(boneMatrix.m10, boneMatrix.m11, boneMatrix.m12, boneMatrix.m13);
-                pixels[pixelIndex++] = new Color(boneMatrix.m20, boneMatrix.m21, boneMatrix.m22, boneMatrix.m23);
+                EncodeFloat4ToColor32(boneMatrix.m00, boneMatrix.m01, boneMatrix.m02, boneMatrix.m03,
+                    out pixels[pixelIndex], out pixels[pixelIndex + 1]);
+                pixelIndex += 2;
+                EncodeFloat4ToColor32(boneMatrix.m10, boneMatrix.m11, boneMatrix.m12, boneMatrix.m13,
+                    out pixels[pixelIndex], out pixels[pixelIndex + 1]);
+                pixelIndex += 2;
+                EncodeFloat4ToColor32(boneMatrix.m20, boneMatrix.m21, boneMatrix.m22, boneMatrix.m23,
+                    out pixels[pixelIndex], out pixels[pixelIndex + 1]);
+                pixelIndex += 2;
             }
 
             foreach (var clip in clips)
@@ -224,12 +271,15 @@ namespace ZG
 
                     foreach (var boneMatrix in bones.Select((b, idx) => b.localToWorldMatrix * bindposes[idx]))
                     {
-                        pixels[pixelIndex++] =
-                            new Color(boneMatrix.m00, boneMatrix.m01, boneMatrix.m02, boneMatrix.m03);
-                        pixels[pixelIndex++] =
-                            new Color(boneMatrix.m10, boneMatrix.m11, boneMatrix.m12, boneMatrix.m13);
-                        pixels[pixelIndex++] =
-                            new Color(boneMatrix.m20, boneMatrix.m21, boneMatrix.m22, boneMatrix.m23);
+                        EncodeFloat4ToColor32(boneMatrix.m00, boneMatrix.m01, boneMatrix.m02, boneMatrix.m03,
+                            out pixels[pixelIndex], out pixels[pixelIndex + 1]);
+                        pixelIndex += 2;
+                        EncodeFloat4ToColor32(boneMatrix.m10, boneMatrix.m11, boneMatrix.m12, boneMatrix.m13,
+                            out pixels[pixelIndex], out pixels[pixelIndex + 1]);
+                        pixelIndex += 2;
+                        EncodeFloat4ToColor32(boneMatrix.m20, boneMatrix.m21, boneMatrix.m22, boneMatrix.m23,
+                            out pixels[pixelIndex], out pixels[pixelIndex + 1]);
+                        pixelIndex += 2;
                     }
                 }
             }
@@ -240,7 +290,7 @@ namespace ZG
             SkinnedMeshRenderer smr,
             GameObject targetObject,
             int targetFrameRate, 
-            ref Color[] pixels)
+            ref Color32[] pixels)
         {
             int boneLength = smr.bones.Length, pixelCount = BONE_MATRIX_ROW_COUNT * boneLength;
             foreach (var clip in clips)
@@ -252,7 +302,7 @@ namespace ZG
             var span = pixels.AsSpan(0, pixelCount);
             GenerateAnimationTexture(clips, smr, targetObject, targetFrameRate, ref span);
             
-            return HashUtility.Compute((ReadOnlySpan<Color>)span);
+            return HashUtility.Compute((ReadOnlySpan<Color32>)span);
         }
 
         public Hash128 GenerateSkinHash(SkinnedMeshRenderer skinnedMeshRenderer)
@@ -264,7 +314,7 @@ namespace ZG
                 return default;
             }
 
-            Color[] pixels = null;
+            Color32[] pixels = null;
             return GenerateSkinHash(animator.runtimeAnimatorController.animationClips, skinnedMeshRenderer,
                 animator.gameObject, _targetFrameRate, ref pixels);
         }
@@ -284,7 +334,7 @@ namespace ZG
             Skin skin;
             Clip clip;
             AnimationClip[] animationClips;
-            Color[] pixelsTemp = null;
+            Color32[] pixelsTemp = null;
             var textureIndices = new List<int>();
             var clips = new List<Clip>();
             var clipStartIndices = new Dictionary<Animator, int>();
@@ -350,11 +400,17 @@ namespace ZG
             
             _clips = clips.ToArray();
             
+            // Use RGBA32 + half-float encoding instead of RGBAFloat.
+            // RGBAFloat Texture2DArray is unreliable on WebGL2/GLES3 (WeChat mini-game):
+            //   - textureLod() returns zero for some texels on RGBAFloat
+            //   - texelFetch() returns zero for all texels on RGBAFloat
+            // RGBA32 is universally supported on all platforms including WebGL2.
+            // Each float4 bone matrix row is encoded as 2 RGBA32 texels (2 half-floats per texel).
             var textures = new Texture2DArray(
                 textureWidth, 
                 textureHeight, 
                 textureDepth, 
-                TextureFormat.RGBAHalf,
+                TextureFormat.RGBA32,
                 false, 
                 true);
 
@@ -363,9 +419,9 @@ namespace ZG
             _renderers = new Renderer[skins.Count];
             
             int textureSize = textureWidth * textureHeight, rendererIndex = 0;
-            Span<Color> subPixels;
-            Color[] pixels;
-            var pixelColors = new Color[textureDepth][];
+            Span<Color32> subPixels;
+            Color32[] pixels;
+            var pixelColors = new Color32[textureDepth][];
             foreach (var skinnedMeshRenderer in skinnedMeshRenderers)
             {
                 if(!skinnedMeshRendererHashes.TryGetValue(skinnedMeshRenderer, out hash))
@@ -380,7 +436,7 @@ namespace ZG
                 pixels = pixelColors[skin.depthIndex];
                 if (pixels == null)
                 {
-                    pixels = new Color[textureSize];
+                    pixels = new Color32[textureSize];
                     
                     pixelColors[skin.depthIndex] = pixels;
                 }
@@ -406,7 +462,7 @@ namespace ZG
             }
             
             for(int i = 0; i < textureDepth; ++i)
-                textures.SetPixels(pixelColors[i], i);
+                textures.SetPixels32(pixelColors[i], i);
             
             textures.Apply();
             textures.filterMode = FilterMode.Point;

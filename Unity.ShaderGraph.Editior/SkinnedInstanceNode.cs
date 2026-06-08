@@ -212,17 +212,46 @@ namespace UnityEditor.ShaderGraph
                 // RGBAFloat textures is not fully guaranteed on all GLES3/WebGL2 devices,
                 // causing some frames to read zero for certain texels.
                 // texelSize = float4(1/width, 1/height, width, height).
-                sb.AppendLine("float4 SkinnedInstanceTex(UnityTexture2DArray map, float4 texelSize, uint index, float depth)");
+                sb.AppendLine("float4 SkinnedInstanceTex(UnityTexture2DArray map, float4 texelSize, uint texelIndex, float depth)");
                 sb.AppendLine("{");
                 using (sb.IndentScope())
                 {
-                    sb.AppendLine("uint2 coord = SkinnedInstanceGetUV(index, texelSize);");
+                    sb.AppendLine("uint2 coord = SkinnedInstanceGetUV(texelIndex, texelSize);");
                     sb.AppendLine("uint sliceIndex = (uint)(depth + 0.5);");
                     sb.AppendLine("return LOAD_TEXTURE2D_ARRAY(map.tex, coord, sliceIndex);");
                 }
                 sb.AppendLine("}");
             });
             
+            registry.ProvideFunction("SkinnedInstanceDecodeHalf2", sb =>
+            {
+                // Decode 2 half-floats from an RGBA32 texel.
+                // RGBA32 layout: R,G = first half-float (lo,hi bytes), B,A = second half-float (lo,hi bytes).
+                sb.AppendLine("float2 SkinnedInstanceDecodeHalf2(float4 rgba)");
+                sb.AppendLine("{");
+                using (sb.IndentScope())
+                {
+                    sb.AppendLine("uint h0 = (uint)(rgba.r * 255.0 + 0.5) | ((uint)(rgba.g * 255.0 + 0.5) << 8);");
+                    sb.AppendLine("uint h1 = (uint)(rgba.b * 255.0 + 0.5) | ((uint)(rgba.a * 255.0 + 0.5) << 8);");
+                    sb.AppendLine("return float2(f16tof32(h0), f16tof32(h1));");
+                }
+                sb.AppendLine("}");
+            });
+
+            registry.ProvideFunction("SkinnedInstanceReadFloat4", sb =>
+            {
+                // Read a float4 from 2 consecutive RGBA32 texels (half-float encoding).
+                sb.AppendLine("float4 SkinnedInstanceReadFloat4(UnityTexture2DArray map, float4 texelSize, uint texelIndex, float depth)");
+                sb.AppendLine("{");
+                using (sb.IndentScope())
+                {
+                    sb.AppendLine("float2 a = SkinnedInstanceDecodeHalf2(SkinnedInstanceTex(map, texelSize, texelIndex, depth));");
+                    sb.AppendLine("float2 b = SkinnedInstanceDecodeHalf2(SkinnedInstanceTex(map, texelSize, texelIndex + 1, depth));");
+                    sb.AppendLine("return float4(a, b);");
+                }
+                sb.AppendLine("}");
+            });
+
             registry.ProvideFunction("SkinnedInstanceGetMatrix", sb =>
             {
                 sb.AppendLine($"float3x4 SkinnedInstanceGetMatrix(uint startIndex, uint boneIndex, float depth, float4 texelSize, UnityTexture2DArray map)");
@@ -230,10 +259,10 @@ namespace UnityEditor.ShaderGraph
                 using (sb.IndentScope())
                 {
                     //sb.AppendLine("#if (SHADER_TARGET >= 41)");
-                    sb.AppendLine("uint matrixIndex = startIndex + boneIndex * 3;");
-                    sb.AppendLine("float4 row0 = SkinnedInstanceTex(map, texelSize, matrixIndex + 0, depth);");
-                    sb.AppendLine("float4 row1 = SkinnedInstanceTex(map, texelSize, matrixIndex + 1, depth);");
-                    sb.AppendLine("float4 row2 = SkinnedInstanceTex(map, texelSize, matrixIndex + 2, depth);");
+                    sb.AppendLine("uint matrixIndex = startIndex + boneIndex * 6;");
+                    sb.AppendLine("float4 row0 = SkinnedInstanceReadFloat4(map, texelSize, matrixIndex + 0, depth);");
+                    sb.AppendLine("float4 row1 = SkinnedInstanceReadFloat4(map, texelSize, matrixIndex + 2, depth);");
+                    sb.AppendLine("float4 row2 = SkinnedInstanceReadFloat4(map, texelSize, matrixIndex + 4, depth);");
                     //sb.AppendLine("#else");
                     //sb.AppendLine("float4 row0 = float4(1.0f, 0, 0, 0);");
                     //sb.AppendLine("float4 row1 = float4(0, 1.0f, 0, 0);");
