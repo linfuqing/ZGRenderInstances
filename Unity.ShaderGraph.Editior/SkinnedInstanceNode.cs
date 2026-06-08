@@ -159,7 +159,7 @@ namespace UnityEditor.ShaderGraph
                 sb.AppendLine("UNITY_INSTANCING_BUFFER_END(SkinnedInstance)");
             });
             
-            /*registry.ProvideFunction("SkinnedInstanceGetUV", sb =>
+            registry.ProvideFunction("SkinnedInstanceGetUV", sb =>
             {
                 sb.AppendLine($"float2 SkinnedInstanceGetUV(uint index, float4 texelSize)");
                 sb.AppendLine("{");
@@ -185,9 +185,9 @@ namespace UnityEditor.ShaderGraph
                 }
 
                 sb.AppendLine("}");
-            });*/
+            });
             
-            registry.ProvideFunction("SkinnedInstanceGetUV", sb =>
+            /*registry.ProvideFunction("SkinnedInstanceGetUV", sb =>
             {
                 sb.AppendLine($"uint2 SkinnedInstanceGetUV(uint index, float4 texelSize)");
                 sb.AppendLine("{");
@@ -221,7 +221,7 @@ namespace UnityEditor.ShaderGraph
                     sb.AppendLine("return LOAD_TEXTURE2D_ARRAY(map.tex, coord, sliceIndex);");
                 }
                 sb.AppendLine("}");
-            });
+            });*/
             
             registry.ProvideFunction("SkinnedInstanceDecodeHalf2", sb =>
             {
