@@ -68,6 +68,8 @@ namespace ZG
             public int clipStartIndex;
             public int clipCount;
 
+            public int boneDataPixelIndex;
+
             public bool IsInClip(int index)
             {
                 return index >= clipStartIndex && index < clipStartIndex + clipCount;
@@ -78,6 +80,7 @@ namespace ZG
                 RenderSkinnedData skinnedData;
                 skinnedData.depth = depthIndex;
                 skinnedData.pixelOffset = (uint)(frame * pixelCountPerFrame + pixelOffset);
+                skinnedData.boneDataPixelOffset = (uint)boneDataPixelIndex;
 
                 return skinnedData;
             }

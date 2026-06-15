@@ -10,5 +10,7 @@ namespace ZG
         public uint pixelOffset;
         [FieldOffset(4)]
         public float depth;
+        [FieldOffset(8)]
+        public uint boneDataPixelOffset;
     }
 }

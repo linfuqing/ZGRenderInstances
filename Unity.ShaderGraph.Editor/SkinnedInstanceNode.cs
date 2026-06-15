@@ -8,8 +8,7 @@ namespace UnityEditor.ShaderGraph
     class SkinnedInstanceNode : AbstractMaterialNode, 
         IGeneratesBodyCode, 
         IGeneratesFunction, 
-        IMayRequireVertexSkinning,
-        //IMayRequireMeshUV, 
+        IMayRequireVertexID,
         IMayRequirePosition, 
         IMayRequireNormal, 
         IMayRequireTangent
@@ -71,7 +70,7 @@ namespace UnityEditor.ShaderGraph
             });
         }
 
-        public bool RequiresVertexSkinning(ShaderStageCapability stageCapability = ShaderStageCapability.All)
+        public bool RequiresVertexID(ShaderStageCapability stageCapability = ShaderStageCapability.All)
         {
             return true;
         }
@@ -102,26 +101,6 @@ namespace UnityEditor.ShaderGraph
 
         public override void CollectShaderProperties(PropertyCollector properties, GenerationMode generationMode)
         {
-            /*properties.AddShaderProperty(new Vector1ShaderProperty()
-            {
-                displayName = "Animated Skin Pixel Count Per Frame",
-                overrideReferenceName = "_AnimatedSkinPixelCountPerFrame",
-                //overrideHLSLDeclaration = true,
-                hlslDeclarationOverride = HLSLDeclaration.UnityPerMaterial,
-                hidden = false,
-                value = 0
-            });
-            
-            properties.AddShaderProperty(new Texture2DShaderProperty()
-            {
-                displayName = "Animated Skin Tex",
-                overrideReferenceName = "_AnimatedSkinTex",
-                generatePropertyBlock = false,
-                //hlslDeclarationOverride = HLSLDeclaration.UnityPerMaterial,
-                defaultType = Texture2DShaderProperty.DefaultType.White,
-                //value = 0
-            });*/
-
             base.CollectShaderProperties(properties, generationMode);
         }
 
@@ -135,8 +114,7 @@ namespace UnityEditor.ShaderGraph
                 sb.AppendLine($"{GetFunctionName()}(" +
                               $"{GetSlotValue(kTexSlotId, generationMode)}, " +
                               $"{GetSlotValue(kTexelSizeSlotId, generationMode)}, " +
-                              $"IN.BoneIndices, " +
-                              $"IN.BoneWeights, " +
+                              $"IN.VertexID, " +
                               $"{GetSlotValue(kPositionSlotId, generationMode)}, " +
                               $"{GetSlotValue(kNormalSlotId, generationMode)}, " +
                               $"{GetSlotValue(kTangentSlotId, generationMode)}, " +
@@ -155,6 +133,7 @@ namespace UnityEditor.ShaderGraph
                 {
                     sb.AppendLine("UNITY_DEFINE_INSTANCED_PROP(float, _PixelOffset)");
                     sb.AppendLine("UNITY_DEFINE_INSTANCED_PROP(float, _Depth)");
+                    sb.AppendLine("UNITY_DEFINE_INSTANCED_PROP(float, _BoneDataPixelOffset)");
                 }
                 sb.AppendLine("UNITY_INSTANCING_BUFFER_END(SkinnedInstance)");
             });
@@ -187,46 +166,8 @@ namespace UnityEditor.ShaderGraph
                 sb.AppendLine("}");
             });
             
-            /*registry.ProvideFunction("SkinnedInstanceGetUV", sb =>
-            {
-                sb.AppendLine($"uint2 SkinnedInstanceGetUV(uint index, float4 texelSize)");
-                sb.AppendLine("{");
-                using (sb.IndentScope())
-                {
-                    sb.AppendLine("uint z = (uint)texelSize.z;");
-                    sb.AppendLine("uint row = index / z;");
-                    sb.AppendLine("uint col = index % z;");
-                    sb.AppendLine("return uint2(col, row);");
-                }
-
-                sb.AppendLine("}");
-            });
-            
-            registry.ProvideFunction("SkinnedInstanceTex", sb =>
-            {
-                // Use LOAD_TEXTURE2D_ARRAY (texelFetch) for exact texel reads.
-                // texelFetch does not depend on sampler state or wrap mode,
-                // and is fully supported for RGBAFloat textures on WebGL2/GLES3.
-                // The earlier switch to SAMPLE_TEXTURE2D_ARRAY_LOD (textureLod) fixed
-                // a sampler binding issue but introduced a new problem: textureLod with
-                // RGBAFloat textures is not fully guaranteed on all GLES3/WebGL2 devices,
-                // causing some frames to read zero for certain texels.
-                // texelSize = float4(1/width, 1/height, width, height).
-                sb.AppendLine("float4 SkinnedInstanceTex(UnityTexture2DArray map, float4 texelSize, uint texelIndex, float depth)");
-                sb.AppendLine("{");
-                using (sb.IndentScope())
-                {
-                    sb.AppendLine("uint2 coord = SkinnedInstanceGetUV(texelIndex, texelSize);");
-                    sb.AppendLine("uint sliceIndex = (uint)(depth + 0.5);");
-                    sb.AppendLine("return LOAD_TEXTURE2D_ARRAY(map.tex, coord, sliceIndex);");
-                }
-                sb.AppendLine("}");
-            });*/
-            
             registry.ProvideFunction("SkinnedInstanceDecodeHalf2", sb =>
             {
-                // Decode 2 half-floats from an RGBA32 texel.
-                // RGBA32 layout: R,G = first half-float (lo,hi bytes), B,A = second half-float (lo,hi bytes).
                 sb.AppendLine("float2 SkinnedInstanceDecodeHalf2(float4 rgba)");
                 sb.AppendLine("{");
                 using (sb.IndentScope())
@@ -240,7 +181,6 @@ namespace UnityEditor.ShaderGraph
 
             registry.ProvideFunction("SkinnedInstanceReadFloat4", sb =>
             {
-                // Read a float4 from 2 consecutive RGBA32 texels (half-float encoding).
                 sb.AppendLine("float4 SkinnedInstanceReadFloat4(UnityTexture2DArray map, float4 texelSize, uint texelIndex, float depth)");
                 sb.AppendLine("{");
                 using (sb.IndentScope())
@@ -258,16 +198,10 @@ namespace UnityEditor.ShaderGraph
                 sb.AppendLine("{");
                 using (sb.IndentScope())
                 {
-                    //sb.AppendLine("#if (SHADER_TARGET >= 41)");
                     sb.AppendLine("uint matrixIndex = startIndex + boneIndex * 6;");
                     sb.AppendLine("float4 row0 = SkinnedInstanceReadFloat4(map, texelSize, matrixIndex + 0, depth);");
                     sb.AppendLine("float4 row1 = SkinnedInstanceReadFloat4(map, texelSize, matrixIndex + 2, depth);");
                     sb.AppendLine("float4 row2 = SkinnedInstanceReadFloat4(map, texelSize, matrixIndex + 4, depth);");
-                    //sb.AppendLine("#else");
-                    //sb.AppendLine("float4 row0 = float4(1.0f, 0, 0, 0);");
-                    //sb.AppendLine("float4 row1 = float4(0, 1.0f, 0, 0);");
-                    //sb.AppendLine("float4 row2 = float4(0, 0, 1.0f, 0);");
-                    //sb.AppendLine("#endif");
                     
                     sb.AppendLine("return float3x4(row0, row1, row2);");
                 }
@@ -280,8 +214,7 @@ namespace UnityEditor.ShaderGraph
                 sb.AppendLine($"void {GetFunctionName()}(" +
                               "UnityTexture2DArray map, " +
                               "$precision4 texelSize, " +
-                              "uint4 indices, " +
-                              "$precision4 weights, " +
+                              "uint vertexID, " +
                               "$precision3 positionIn, " +
                               "$precision3 normalIn, " +
                               "$precision3 tangentIn, " +
@@ -299,6 +232,15 @@ namespace UnityEditor.ShaderGraph
                         "uint pixelOffset = asuint(UNITY_ACCESS_INSTANCED_PROP(SkinnedInstance, _PixelOffset));");
                     sb.AppendLine(
                         "float depth = UNITY_ACCESS_INSTANCED_PROP(SkinnedInstance, _Depth);");
+                    sb.AppendLine(
+                        "uint boneDataPixelOffset = asuint(UNITY_ACCESS_INSTANCED_PROP(SkinnedInstance, _BoneDataPixelOffset));");
+
+                    // Read bone indices and weights from _AnimationMap via vertexID
+                    sb.AppendLine("uint bonePixelIndex = boneDataPixelOffset + vertexID * 4;");
+                    sb.AppendLine("float4 idxF = SkinnedInstanceReadFloat4(map, texelSize, bonePixelIndex, depth);");
+                    sb.AppendLine("uint4 indices = (uint4)(idxF + 0.5);");
+                    sb.AppendLine("float4 weights = SkinnedInstanceReadFloat4(map, texelSize, bonePixelIndex + 2, depth);");
+
                     sb.AppendLine(
                         "float totalWeight = 0.0f, weight;");
 

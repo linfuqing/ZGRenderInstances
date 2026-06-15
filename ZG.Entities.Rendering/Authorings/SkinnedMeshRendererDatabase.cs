@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
+using UnityEngine.Rendering;
 using Hash128 = UnityEngine.Hash128;
 
 #if UNITY_EDITOR
@@ -31,6 +32,7 @@ namespace ZG
             public int pixelIndex;
             public int pixelCount;
             public int pixelCountPerFrame;
+            public int boneDataPixelIndex;
         }
         
         [Serializable]
@@ -43,6 +45,47 @@ namespace ZG
             public int clipCount;
         }
 
+        private struct MeshWrapper : IDisposable
+        {
+            private Mesh __mesh;
+            private ModelImporter __modelImporter;
+
+            public MeshWrapper(Mesh mesh)
+            {
+                __mesh = mesh;
+                __modelImporter = AssetDatabase.LoadAssetAtPath<ModelImporter>(AssetDatabase.GetAssetPath(mesh));
+                
+                if (__modelImporter != null)
+                {
+                    if (__modelImporter.isReadable)
+                        __modelImporter = null;
+                    else
+                    {
+                        __modelImporter.isReadable = true;
+
+                        __modelImporter.SaveAndReimport();
+                    }
+                }
+            }
+
+            public void Dispose()
+            {
+                if (__modelImporter == null)
+                    return;
+                
+                __modelImporter.isReadable = false;
+                
+                __modelImporter.SaveAndReimport();
+
+                __modelImporter = null;
+            }
+            
+            public static implicit operator Mesh(MeshWrapper wrapper)
+            {
+                return wrapper.__mesh;
+            }
+        }
+        
         // Each bone matrix (float3x4) uses 6 texels with RGBA32 half-float encoding:
         // Each float4 row is encoded as 2 RGBA32 texels (2 half-floats per texel).
         public const int BONE_MATRIX_ROW_COUNT = 6;
@@ -137,9 +180,12 @@ namespace ZG
             return boneMatrixCount * (int)(clipLength * targetFrameRate);
         }
 
+        public const int BONE_DATA_PIXELS_PER_VERTEX = 4;
+
         public static Skin CalculatedSkin(
             in ReadOnlySpan<AnimationClip> animationClips, 
             int boneLength,
+            int vertexCount,
             int targetFrameRate, 
             int maxTextureWidth, 
             int maxTextureHeight, 
@@ -150,7 +196,10 @@ namespace ZG
             List<int> textureIndices)
         {
             Skin result;
-            result.pixelCount = BONE_MATRIX_ROW_COUNT * boneLength;
+            
+            // Per-vertex bone data: 4 pixels per vertex (indices + weights as half-float)
+            int boneDataPixelCount = BONE_DATA_PIXELS_PER_VERTEX * vertexCount;
+            result.pixelCount = boneDataPixelCount + BONE_MATRIX_ROW_COUNT * boneLength;
 
             int numClips = animationClips.Length;
             //result.clips = new Clip[numClips];
@@ -178,7 +227,8 @@ namespace ZG
             if (textureDepth < 2)
             {
                 result.depthIndex = textureDepth - 1;
-                result.pixelIndex = totalPixels;
+                result.boneDataPixelIndex = totalPixels;
+                result.pixelIndex = totalPixels + boneDataPixelCount;
                 
                 totalPixels += result.pixelCount;
                 while (textureWidth * textureHeight < totalPixels)
@@ -195,7 +245,8 @@ namespace ZG
                             
                         textureIndices.Add(result.pixelCount);
 
-                        result.pixelIndex = 0;
+                        result.boneDataPixelIndex = 0;
+                        result.pixelIndex = boneDataPixelCount;
 
                         result.depthIndex = textureDepth++;
                         
@@ -208,18 +259,20 @@ namespace ZG
                 int textureSize = textureWidth * textureHeight;
                 UnityEngine.Assertions.Assert.IsTrue(textureSize >= result.pixelCount);
 
-                result.pixelIndex = 0;
+                result.boneDataPixelIndex = 0;
+                result.pixelIndex = boneDataPixelCount;
                 
                 int i;
                 for (i = 0; i < textureDepth; ++i)
                 {
-                    result.pixelIndex = textureIndices[i];
-                    if (textureSize - result.pixelIndex >= result.pixelCount)
+                    result.boneDataPixelIndex = textureIndices[i];
+                    if (textureSize - result.boneDataPixelIndex >= result.pixelCount)
                         break;
                 }
 
                 if (i < textureDepth)
                 {
+                    result.pixelIndex = result.boneDataPixelIndex + boneDataPixelCount;
                     textureIndices[i] += result.pixelCount;
 
                     result.depthIndex = i;
@@ -228,7 +281,8 @@ namespace ZG
                 {
                     textureIndices.Add(result.pixelCount);
 
-                    result.pixelIndex = 0;
+                    result.boneDataPixelIndex = 0;
+                    result.pixelIndex = boneDataPixelCount;
                     
                     result.depthIndex = textureDepth++;
                 }
@@ -246,8 +300,32 @@ namespace ZG
             ref Span<Color32> pixels)
         {
             int pixelIndex = 0;
+
+            BoneWeight[] boneWeights;
+            Matrix4x4[] bindposes;
+            using (var meshWrapper = new MeshWrapper(smr.sharedMesh))
+            {
+                Mesh sharedMesh = meshWrapper;
+                // Write per-vertex bone data (indices + weights) at the beginning
+                // Use bakedMesh instead of smr.sharedMesh to avoid accessing read-only mesh properties
+                boneWeights = sharedMesh.boneWeights;
+                bindposes = sharedMesh.bindposes;
+            }
+
+            for (int v = 0; v < boneWeights.Length; v++)
+            {
+                var bw = boneWeights[v];
+                // Pixel pair 1: bone indices (idx0, idx1, idx2, idx3) as half-float
+                EncodeFloat4ToColor32(bw.boneIndex0, bw.boneIndex1, bw.boneIndex2, bw.boneIndex3,
+                    out pixels[pixelIndex], out pixels[pixelIndex + 1]);
+                pixelIndex += 2;
+                // Pixel pair 2: bone weights (w0, w1, w2, w3) as half-float
+                EncodeFloat4ToColor32(bw.weight0, bw.weight1, bw.weight2, bw.weight3,
+                    out pixels[pixelIndex], out pixels[pixelIndex + 1]);
+                pixelIndex += 2;
+            }
+            
             var bones = smr.bones;
-            var bindposes = smr.sharedMesh.bindposes;
             //Setup 0 to bindPoses
             foreach (var boneMatrix in bones.Select((b, idx) => b.localToWorldMatrix * bindposes[idx]))
             {
@@ -292,7 +370,9 @@ namespace ZG
             int targetFrameRate, 
             ref Color32[] pixels)
         {
-            int boneLength = smr.bones.Length, pixelCount = BONE_MATRIX_ROW_COUNT * boneLength;
+            int boneLength = smr.bones.Length;
+            int vertexCount = smr.sharedMesh.vertexCount;
+            int pixelCount = BONE_DATA_PIXELS_PER_VERTEX * vertexCount + BONE_MATRIX_ROW_COUNT * boneLength;
             foreach (var clip in clips)
                 pixelCount += CalculatedTexturePixels(clip.length, boneLength, targetFrameRate);
 
@@ -345,6 +425,8 @@ namespace ZG
                 foreach (var material in skinnedMeshRenderer.sharedMaterials)
                     GetOrCreateMaterial(material);
                 
+                GetOrCreateMesh(skinnedMeshRenderer);
+                
                 animator = skinnedMeshRenderer.GetComponentInParent<Animator>(true);
                 if (animator == null)
                 {
@@ -386,7 +468,8 @@ namespace ZG
                 skin = CalculatedSkin(
                     animationClips, 
                     skinnedMeshRenderer.bones.Length, 
-                    _targetFrameRate, 
+                    GetOrCreateMesh(skinnedMeshRenderer).vertexCount,
+                    _targetFrameRate,
                     _maxTextureWidth, 
                     _maxTextureHeight, 
                     ref textureWidth, 
@@ -441,7 +524,7 @@ namespace ZG
                     pixelColors[skin.depthIndex] = pixels;
                 }
 
-                subPixels = pixels.AsSpan(skin.pixelIndex, skin.pixelCount);
+                subPixels = pixels.AsSpan(skin.boneDataPixelIndex, skin.pixelCount);
 
                 animationClips = animator.runtimeAnimatorController.animationClips;
                 GenerateAnimationTexture(
@@ -570,6 +653,108 @@ namespace ZG
             return newMaterial;
         }
 
+        private Dictionary<Mesh, Mesh> __meshCache;
+
+        public Mesh GetOrCreateMesh(SkinnedMeshRenderer skinnedMeshRenderer)
+        {
+            using var meshWrapper = new MeshWrapper(skinnedMeshRenderer.sharedMesh);
+            Mesh sharedMesh = meshWrapper;
+            
+            if (__meshCache != null && __meshCache.TryGetValue(sharedMesh, out var cached) && cached != null)
+                return cached;
+            
+            // Search for an existing baked mesh sub-asset
+            var assetPath = AssetDatabase.GetAssetPath(this);
+            foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(assetPath))
+            {
+                if (asset is Mesh mesh && asset != this && asset.name == sharedMesh.name)
+                {
+                    if (__meshCache == null) 
+                        __meshCache = new Dictionary<Mesh, Mesh>();
+                    
+                    __meshCache[sharedMesh] = mesh;
+                    
+                    return mesh;
+                }
+            }
+            
+            // Create a new baked mesh using AcquireReadOnlyMeshData (works on read-only meshes)
+            var newMesh = new Mesh();
+            newMesh.name = sharedMesh.name;
+            newMesh.bounds = sharedMesh.bounds;
+
+            using (var readOnlyData = Mesh.AcquireReadOnlyMeshData(sharedMesh))
+            {
+                var source = readOnlyData[0];
+                int vertexCount = source.vertexCount;
+                var descriptors = new List<VertexAttributeDescriptor>(sharedMesh.GetVertexAttributes());
+                int numDescriptors = descriptors.Count;
+                for(int i = 0; i < numDescriptors; ++i)
+                {
+                    switch (descriptors[i].attribute)
+                    {
+                        case VertexAttribute.BlendWeight:
+                        case VertexAttribute.BlendIndices:
+                            descriptors.RemoveAt(i--);
+
+                            --numDescriptors;
+                            break;
+                    }
+                }
+
+                var writableData = Mesh.AllocateWritableMeshData(1);
+                var dest = writableData[0];
+
+                dest.SetVertexBufferParams(vertexCount, descriptors.ToArray());
+
+                int maxStream = 0;
+                foreach (var d in descriptors)
+                {
+                    if (d.stream > maxStream)
+                        maxStream = d.stream;
+                }
+
+                for (int stream = 0; stream <= maxStream; stream++)
+                {
+                    var srcData = source.GetVertexData<byte>(stream);
+                    var dstData = dest.GetVertexData<byte>(stream);
+                    if (srcData.Length > 0)
+                        NativeArray<byte>.Copy(srcData, dstData, srcData.Length);
+                }
+
+                int indexCount = 0;
+                for (int i = 0; i < source.subMeshCount; i++)
+                {
+                    var subMesh = source.GetSubMesh(i);
+                    int last = subMesh.indexStart + subMesh.indexCount;
+                    if (last > indexCount)
+                        indexCount = last;
+                }
+
+                dest.SetIndexBufferParams(indexCount, source.indexFormat);
+
+                var srcIdx = source.GetIndexData<byte>();
+                var dstIdx = dest.GetIndexData<byte>();
+                if (srcIdx.Length > 0)
+                    NativeArray<byte>.Copy(srcIdx, dstIdx, srcIdx.Length);
+
+                dest.subMeshCount = source.subMeshCount;
+                for (int i = 0; i < source.subMeshCount; i++)
+                    dest.SetSubMesh(i, source.GetSubMesh(i));
+
+                Mesh.ApplyAndDisposeWritableMeshData(writableData, newMesh);
+            }
+            
+            AssetDatabase.AddObjectToAsset(newMesh, this);
+            
+            if (__meshCache == null) 
+                __meshCache = new Dictionary<Mesh, Mesh>();
+                    
+            __meshCache[sharedMesh] = newMesh;
+
+            return newMesh;
+        }
+
         public BlobAssetReference<InstanceAnimationDefinition> CreateAnimationDefinition(
             in AllocatorManager.AllocatorHandle allocator)
         {
@@ -603,6 +788,7 @@ namespace ZG
                     destination.pixelCountPerFrame = source.skin.pixelCountPerFrame;
                     destination.clipStartIndex = source.clipIndex;
                     destination.clipCount = source.clipCount;
+                    destination.boneDataPixelIndex = source.skin.boneDataPixelIndex;
                 }
                 
                 return builder.CreateBlobAssetReference<InstanceAnimationDefinition>(allocator);
