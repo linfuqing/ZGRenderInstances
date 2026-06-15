@@ -42,12 +42,13 @@ namespace ZG
                 RenderSkinnedData skinnedData;
                 skinnedData.depth = skin.depthIndex;
                 skinnedData.pixelOffset = (uint)skin.pixelIndex;
+                skinnedData.boneDataPixelOffset = (uint)skin.boneDataPixelIndex;
 
                 var materials = skinnedMeshRenderer.sharedMaterials;
                 
                 RenderSharedData sharedData;
                 //sharedData.material = database.GetOrCreateMaterial(materials[0]);
-                sharedData.mesh = skinnedMeshRenderer.sharedMesh;
+                sharedData.mesh = database.GetOrCreateMesh(skinnedMeshRenderer);
                 MeshRendererBaker.Bake(baker, entity, skinnedMeshRenderer, sharedData.mesh, 0, (subMeshIndex, entity) =>
                 {
                     InstanceSkinnedMeshRenderer instanceSkinnedMeshRenderer;
