@@ -175,12 +175,99 @@ namespace ZG
 
         public static int CalculatedTexturePixels(float clipLength, int boneLength, int targetFrameRate)
         {
-            var boneMatrixCount = BONE_MATRIX_ROW_COUNT * boneLength;
+            long boneMatrixCount = BONE_MATRIX_ROW_COUNT * (long)boneLength;
+            long frameCount = (long)(clipLength * targetFrameRate);
+            long total = boneMatrixCount * frameCount;
+            if (total > int.MaxValue)
+            {
+                throw new OverflowException(
+                    $"Animation texture pixel count overflow: clipLength={clipLength}, boneLength={boneLength}, targetFrameRate={targetFrameRate}.");
+            }
 
-            return boneMatrixCount * (int)(clipLength * targetFrameRate);
+            return (int)total;
         }
 
         public const int BONE_DATA_PIXELS_PER_VERTEX = 4;
+
+        public static int GetSkinnedVertexCount(Mesh mesh)
+        {
+            if (mesh == null)
+            {
+                return 0;
+            }
+
+            var boneWeights = mesh.boneWeights;
+            if (boneWeights != null && boneWeights.Length > 0)
+            {
+                return boneWeights.Length;
+            }
+
+            return mesh.vertexCount;
+        }
+
+        public static int GetBoneMatrixCount(int boneCount, int bindPoseCount)
+        {
+            if (bindPoseCount < boneCount)
+            {
+                Debug.LogWarning(
+                    $"SkinnedMeshRenderer bone count ({boneCount}) exceeds mesh bindpose count ({bindPoseCount}). Using {bindPoseCount}.");
+            }
+
+            return bindPoseCount < boneCount ? bindPoseCount : boneCount;
+        }
+
+        public static int CalculateAnimationTexturePixelCount(
+            int vertexCount,
+            int boneCount,
+            ReadOnlySpan<AnimationClip> animationClips,
+            int targetFrameRate)
+        {
+            long pixelCount = BONE_DATA_PIXELS_PER_VERTEX * (long)vertexCount + BONE_MATRIX_ROW_COUNT * (long)boneCount;
+            for (int i = 0; i < animationClips.Length; ++i)
+            {
+                pixelCount += CalculatedTexturePixels(animationClips[i].length, boneCount, targetFrameRate);
+            }
+
+            if (pixelCount > int.MaxValue)
+            {
+                throw new OverflowException(
+                    $"Animation texture pixel count overflow: vertexCount={vertexCount}, boneCount={boneCount}, clipCount={animationClips.Length}.");
+            }
+
+            return (int)pixelCount;
+        }
+
+        public static int CalculateAnimationTexturePixelCount(
+            int vertexCount,
+            int boneCount,
+            AnimationClip[] animationClips,
+            int targetFrameRate)
+        {
+            return CalculateAnimationTexturePixelCount(
+                vertexCount,
+                boneCount,
+                animationClips.AsSpan(),
+                targetFrameRate);
+        }
+
+        private static void WriteBoneMatrixPixels(ref Span<Color32> pixels, ref int pixelIndex, in Matrix4x4 boneMatrix)
+        {
+            if (pixelIndex + BONE_MATRIX_ROW_COUNT > pixels.Length)
+            {
+                throw new IndexOutOfRangeException(
+                    $"Animation texture write out of range at pixel {pixelIndex}, need {BONE_MATRIX_ROW_COUNT} pixels, buffer length {pixels.Length}.");
+            }
+
+            EncodeFloat4ToColor32(boneMatrix.m00, boneMatrix.m01, boneMatrix.m02, boneMatrix.m03,
+                out pixels[pixelIndex], out pixels[pixelIndex + 1]);
+            pixelIndex += 2;
+            EncodeFloat4ToColor32(boneMatrix.m10, boneMatrix.m11, boneMatrix.m12, boneMatrix.m13,
+                out pixels[pixelIndex], out pixels[pixelIndex + 1]);
+            pixelIndex += 2;
+            EncodeFloat4ToColor32(boneMatrix.m20, boneMatrix.m21, boneMatrix.m22, boneMatrix.m23,
+                out pixels[pixelIndex], out pixels[pixelIndex + 1]);
+            pixelIndex += 2;
+        }
 
         public static Skin CalculatedSkin(
             in ReadOnlySpan<AnimationClip> animationClips, 
@@ -197,32 +284,13 @@ namespace ZG
         {
             Skin result;
             
-            // Per-vertex bone data: 4 pixels per vertex (indices + weights as half-float)
+            result.pixelCount = CalculateAnimationTexturePixelCount(
+                vertexCount,
+                boneLength,
+                animationClips,
+                targetFrameRate);
+
             int boneDataPixelCount = BONE_DATA_PIXELS_PER_VERTEX * vertexCount;
-            result.pixelCount = boneDataPixelCount + BONE_MATRIX_ROW_COUNT * boneLength;
-
-            int numClips = animationClips.Length;
-            //result.clips = new Clip[numClips];
-
-            //int frameIndex = 1;
-            float clipLength;
-            AnimationClip animationClip;
-            for (int i = 0; i < numClips; ++i)
-            {
-                animationClip = animationClips[i];
-                clipLength = animationClip.length;
-                
-                result.pixelCount += CalculatedTexturePixels(clipLength, boneLength, targetFrameRate);
-
-                /*ref var clip = ref result.clips[i];
-
-                clip.name = animationClip.name;
-                clip.wrapMode = animationClip.wrapMode;
-                clip.frameCount = (int)(clipLength * targetFrameRate);
-                clip.startFrame = frameIndex;
-
-                frameIndex += clip.frameCount;*/
-            }
 
             if (textureDepth < 2)
             {
@@ -299,7 +367,7 @@ namespace ZG
             int targetFrameRate,
             ref Span<Color32> pixels)
         {
-            int pixelIndex = 0;
+            AnimationClip[] clipArray = clips as AnimationClip[] ?? clips.ToArray();
 
             BoneWeight[] boneWeights;
             Matrix4x4[] bindposes;
@@ -308,12 +376,35 @@ namespace ZG
                 Mesh sharedMesh = meshWrapper;
                 // Write per-vertex bone data (indices + weights) at the beginning
                 // Use bakedMesh instead of smr.sharedMesh to avoid accessing read-only mesh properties
-                boneWeights = sharedMesh.boneWeights;
-                bindposes = sharedMesh.bindposes;
+                boneWeights = sharedMesh.boneWeights ?? Array.Empty<BoneWeight>();
+                bindposes = sharedMesh.bindposes ?? Array.Empty<Matrix4x4>();
             }
+
+            int vertexCount = boneWeights.Length > 0 ? boneWeights.Length : GetSkinnedVertexCount(smr.sharedMesh);
+            var bones = smr.bones ?? Array.Empty<Transform>();
+            int boneCount = GetBoneMatrixCount(bones.Length, bindposes.Length);
+            int requiredPixelCount = CalculateAnimationTexturePixelCount(
+                vertexCount,
+                boneCount,
+                clipArray,
+                targetFrameRate);
+            if (pixels.Length < requiredPixelCount)
+            {
+                throw new IndexOutOfRangeException(
+                    $"Animation texture buffer too small: need {requiredPixelCount}, got {pixels.Length}. " +
+                    $"vertexCount={vertexCount}, boneCount={boneCount}, clipCount={clipArray.Length}.");
+            }
+
+            int pixelIndex = 0;
 
             for (int v = 0; v < boneWeights.Length; v++)
             {
+                if (pixelIndex + BONE_DATA_PIXELS_PER_VERTEX > pixels.Length)
+                {
+                    throw new IndexOutOfRangeException(
+                        $"Animation texture write out of range while writing bone weights at vertex {v}, pixel {pixelIndex}.");
+                }
+
                 var bw = boneWeights[v];
                 // Pixel pair 1: bone indices (idx0, idx1, idx2, idx3) as half-float
                 EncodeFloat4ToColor32(bw.boneIndex0, bw.boneIndex1, bw.boneIndex2, bw.boneIndex3,
@@ -325,41 +416,45 @@ namespace ZG
                 pixelIndex += 2;
             }
             
-            var bones = smr.bones;
-            //Setup 0 to bindPoses
-            foreach (var boneMatrix in bones.Select((b, idx) => b.localToWorldMatrix * bindposes[idx]))
+            // Setup bind pose (frame 0)
+            for (int boneIndex = 0; boneIndex < boneCount; ++boneIndex)
             {
-                EncodeFloat4ToColor32(boneMatrix.m00, boneMatrix.m01, boneMatrix.m02, boneMatrix.m03,
-                    out pixels[pixelIndex], out pixels[pixelIndex + 1]);
-                pixelIndex += 2;
-                EncodeFloat4ToColor32(boneMatrix.m10, boneMatrix.m11, boneMatrix.m12, boneMatrix.m13,
-                    out pixels[pixelIndex], out pixels[pixelIndex + 1]);
-                pixelIndex += 2;
-                EncodeFloat4ToColor32(boneMatrix.m20, boneMatrix.m21, boneMatrix.m22, boneMatrix.m23,
-                    out pixels[pixelIndex], out pixels[pixelIndex + 1]);
-                pixelIndex += 2;
+                var bone = bones[boneIndex];
+                if (bone == null)
+                {
+                    throw new InvalidOperationException(
+                        $"SkinnedMeshRenderer bone at index {boneIndex} is null while baking animation texture.");
+                }
+
+                WriteBoneMatrixPixels(ref pixels, ref pixelIndex, bone.localToWorldMatrix * bindposes[boneIndex]);
             }
 
-            foreach (var clip in clips)
+            for (int clipIndex = 0; clipIndex < clipArray.Length; ++clipIndex)
             {
+                var clip = clipArray[clipIndex];
                 var totalFrames = (int)(clip.length * targetFrameRate);
-                foreach (var frame in Enumerable.Range(0, totalFrames))
+                for (int frame = 0; frame < totalFrames; ++frame)
                 {
                     clip.SampleAnimation(targetObject, (float)frame / targetFrameRate);
 
-                    foreach (var boneMatrix in bones.Select((b, idx) => b.localToWorldMatrix * bindposes[idx]))
+                    for (int boneIndex = 0; boneIndex < boneCount; ++boneIndex)
                     {
-                        EncodeFloat4ToColor32(boneMatrix.m00, boneMatrix.m01, boneMatrix.m02, boneMatrix.m03,
-                            out pixels[pixelIndex], out pixels[pixelIndex + 1]);
-                        pixelIndex += 2;
-                        EncodeFloat4ToColor32(boneMatrix.m10, boneMatrix.m11, boneMatrix.m12, boneMatrix.m13,
-                            out pixels[pixelIndex], out pixels[pixelIndex + 1]);
-                        pixelIndex += 2;
-                        EncodeFloat4ToColor32(boneMatrix.m20, boneMatrix.m21, boneMatrix.m22, boneMatrix.m23,
-                            out pixels[pixelIndex], out pixels[pixelIndex + 1]);
-                        pixelIndex += 2;
+                        var bone = bones[boneIndex];
+                        if (bone == null)
+                        {
+                            throw new InvalidOperationException(
+                                $"SkinnedMeshRenderer bone at index {boneIndex} is null while sampling clip '{clip.name}'.");
+                        }
+
+                        WriteBoneMatrixPixels(ref pixels, ref pixelIndex, bone.localToWorldMatrix * bindposes[boneIndex]);
                     }
                 }
+            }
+
+            if (pixelIndex != requiredPixelCount)
+            {
+                throw new InvalidOperationException(
+                    $"Animation texture pixel count mismatch: wrote {pixelIndex}, expected {requiredPixelCount}.");
             }
         }
 
@@ -370,17 +465,30 @@ namespace ZG
             int targetFrameRate, 
             ref Color32[] pixels)
         {
-            int boneLength = smr.bones.Length;
-            int vertexCount = smr.sharedMesh.vertexCount;
-            int pixelCount = BONE_DATA_PIXELS_PER_VERTEX * vertexCount + BONE_MATRIX_ROW_COUNT * boneLength;
-            foreach (var clip in clips)
-                pixelCount += CalculatedTexturePixels(clip.length, boneLength, targetFrameRate);
+            AnimationClip[] clipArray = clips as AnimationClip[] ?? clips.ToArray();
 
-            if(pixels == null || pixels.Length < pixelCount)
+            int vertexCount;
+            int boneCount;
+            using (var meshWrapper = new MeshWrapper(smr.sharedMesh))
+            {
+                Mesh sharedMesh = meshWrapper;
+                vertexCount = GetSkinnedVertexCount(sharedMesh);
+                boneCount = GetBoneMatrixCount(smr.bones.Length, sharedMesh.bindposes.Length);
+            }
+
+            int pixelCount = CalculateAnimationTexturePixelCount(
+                vertexCount,
+                boneCount,
+                clipArray,
+                targetFrameRate);
+
+            if (pixels == null || pixels.Length < pixelCount)
+            {
                 Array.Resize(ref pixels, pixelCount);
+            }
             
             var span = pixels.AsSpan(0, pixelCount);
-            GenerateAnimationTexture(clips, smr, targetObject, targetFrameRate, ref span);
+            GenerateAnimationTexture(clipArray, smr, targetObject, targetFrameRate, ref span);
             
             return HashUtility.Compute((ReadOnlySpan<Color32>)span);
         }
@@ -465,10 +573,21 @@ namespace ZG
                     }
                 }
 
+                int skinVertexCount;
+                int skinBoneCount;
+                using (var meshWrapper = new MeshWrapper(skinnedMeshRenderer.sharedMesh))
+                {
+                    Mesh sharedMesh = meshWrapper;
+                    skinVertexCount = GetSkinnedVertexCount(sharedMesh);
+                    skinBoneCount = GetBoneMatrixCount(
+                        skinnedMeshRenderer.bones.Length,
+                        sharedMesh.bindposes.Length);
+                }
+
                 skin = CalculatedSkin(
                     animationClips, 
-                    skinnedMeshRenderer.bones.Length, 
-                    GetOrCreateMesh(skinnedMeshRenderer).vertexCount,
+                    skinBoneCount, 
+                    skinVertexCount,
                     _targetFrameRate,
                     _maxTextureWidth, 
                     _maxTextureHeight, 
