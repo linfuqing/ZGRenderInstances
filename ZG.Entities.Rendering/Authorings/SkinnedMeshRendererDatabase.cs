@@ -53,7 +53,11 @@ namespace ZG
             public MeshWrapper(Mesh mesh)
             {
                 __mesh = mesh;
-                __modelImporter = AssetDatabase.LoadAssetAtPath<ModelImporter>(AssetDatabase.GetAssetPath(mesh));
+
+                var name = mesh.name;
+                
+                string path = AssetDatabase.GetAssetPath(mesh);
+                __modelImporter = AssetDatabase.LoadAssetAtPath<ModelImporter>(path);
                 
                 if (__modelImporter != null)
                 {
@@ -64,6 +68,16 @@ namespace ZG
                         __modelImporter.isReadable = true;
 
                         __modelImporter.SaveAndReimport();
+
+                        foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(path))
+                        {
+                            if (asset is Mesh temp && temp.name == name)
+                            {
+                                __mesh = temp;
+
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -776,102 +790,105 @@ namespace ZG
 
         public Mesh GetOrCreateMesh(SkinnedMeshRenderer skinnedMeshRenderer)
         {
-            using var meshWrapper = new MeshWrapper(skinnedMeshRenderer.sharedMesh);
-            Mesh sharedMesh = meshWrapper;
-            
+            Mesh sharedMesh = skinnedMeshRenderer.sharedMesh;
             if (__meshCache != null && __meshCache.TryGetValue(sharedMesh, out var cached) && cached != null)
                 return cached;
-            
-            // Search for an existing baked mesh sub-asset
-            var assetPath = AssetDatabase.GetAssetPath(this);
-            foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(assetPath))
-            {
-                if (asset is Mesh mesh && asset != this && asset.name == sharedMesh.name)
-                {
-                    if (__meshCache == null) 
-                        __meshCache = new Dictionary<Mesh, Mesh>();
-                    
-                    __meshCache[sharedMesh] = mesh;
-                    
-                    return mesh;
-                }
-            }
-            
-            // Create a new baked mesh using AcquireReadOnlyMeshData (works on read-only meshes)
-            var newMesh = new Mesh();
-            newMesh.name = sharedMesh.name;
-            newMesh.bounds = sharedMesh.bounds;
 
-            using (var readOnlyData = Mesh.AcquireReadOnlyMeshData(sharedMesh))
+            using (var meshWrapper = new MeshWrapper(skinnedMeshRenderer.sharedMesh))
             {
-                var source = readOnlyData[0];
-                int vertexCount = source.vertexCount;
-                var descriptors = new List<VertexAttributeDescriptor>(sharedMesh.GetVertexAttributes());
-                int numDescriptors = descriptors.Count;
-                for(int i = 0; i < numDescriptors; ++i)
+                sharedMesh = meshWrapper;
+
+                // Search for an existing baked mesh sub-asset
+                var assetPath = AssetDatabase.GetAssetPath(this);
+                foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(assetPath))
                 {
-                    switch (descriptors[i].attribute)
+                    if (asset is Mesh mesh && asset != this && asset.name == sharedMesh.name)
                     {
-                        case VertexAttribute.BlendWeight:
-                        case VertexAttribute.BlendIndices:
-                            descriptors.RemoveAt(i--);
+                        if (__meshCache == null)
+                            __meshCache = new Dictionary<Mesh, Mesh>();
 
-                            --numDescriptors;
-                            break;
+                        __meshCache[sharedMesh] = mesh;
+
+                        return mesh;
                     }
                 }
 
-                var writableData = Mesh.AllocateWritableMeshData(1);
-                var dest = writableData[0];
+                // Create a new baked mesh using AcquireReadOnlyMeshData (works on read-only meshes)
+                var newMesh = new Mesh();
+                newMesh.name = sharedMesh.name;
+                newMesh.bounds = sharedMesh.bounds;
 
-                dest.SetVertexBufferParams(vertexCount, descriptors.ToArray());
-
-                int maxStream = 0;
-                foreach (var d in descriptors)
+                using (var readOnlyData = Mesh.AcquireReadOnlyMeshData(sharedMesh))
                 {
-                    if (d.stream > maxStream)
-                        maxStream = d.stream;
+                    var source = readOnlyData[0];
+                    int vertexCount = source.vertexCount;
+                    var descriptors = new List<VertexAttributeDescriptor>(sharedMesh.GetVertexAttributes());
+                    int numDescriptors = descriptors.Count;
+                    for (int i = 0; i < numDescriptors; ++i)
+                    {
+                        switch (descriptors[i].attribute)
+                        {
+                            case VertexAttribute.BlendWeight:
+                            case VertexAttribute.BlendIndices:
+                                descriptors.RemoveAt(i--);
+
+                                --numDescriptors;
+                                break;
+                        }
+                    }
+
+                    var writableData = Mesh.AllocateWritableMeshData(1);
+                    var dest = writableData[0];
+
+                    dest.SetVertexBufferParams(vertexCount, descriptors.ToArray());
+
+                    int maxStream = 0;
+                    foreach (var d in descriptors)
+                    {
+                        if (d.stream > maxStream)
+                            maxStream = d.stream;
+                    }
+
+                    for (int stream = 0; stream <= maxStream; stream++)
+                    {
+                        var srcData = source.GetVertexData<byte>(stream);
+                        var dstData = dest.GetVertexData<byte>(stream);
+                        if (srcData.Length > 0)
+                            NativeArray<byte>.Copy(srcData, dstData, srcData.Length);
+                    }
+
+                    int indexCount = 0;
+                    for (int i = 0; i < source.subMeshCount; i++)
+                    {
+                        var subMesh = source.GetSubMesh(i);
+                        int last = subMesh.indexStart + subMesh.indexCount;
+                        if (last > indexCount)
+                            indexCount = last;
+                    }
+
+                    dest.SetIndexBufferParams(indexCount, source.indexFormat);
+
+                    var srcIdx = source.GetIndexData<byte>();
+                    var dstIdx = dest.GetIndexData<byte>();
+                    if (srcIdx.Length > 0)
+                        NativeArray<byte>.Copy(srcIdx, dstIdx, srcIdx.Length);
+
+                    dest.subMeshCount = source.subMeshCount;
+                    for (int i = 0; i < source.subMeshCount; i++)
+                        dest.SetSubMesh(i, source.GetSubMesh(i));
+
+                    Mesh.ApplyAndDisposeWritableMeshData(writableData, newMesh);
                 }
 
-                for (int stream = 0; stream <= maxStream; stream++)
-                {
-                    var srcData = source.GetVertexData<byte>(stream);
-                    var dstData = dest.GetVertexData<byte>(stream);
-                    if (srcData.Length > 0)
-                        NativeArray<byte>.Copy(srcData, dstData, srcData.Length);
-                }
+                AssetDatabase.AddObjectToAsset(newMesh, this);
 
-                int indexCount = 0;
-                for (int i = 0; i < source.subMeshCount; i++)
-                {
-                    var subMesh = source.GetSubMesh(i);
-                    int last = subMesh.indexStart + subMesh.indexCount;
-                    if (last > indexCount)
-                        indexCount = last;
-                }
+                if (__meshCache == null)
+                    __meshCache = new Dictionary<Mesh, Mesh>();
 
-                dest.SetIndexBufferParams(indexCount, source.indexFormat);
+                __meshCache[sharedMesh] = newMesh;
 
-                var srcIdx = source.GetIndexData<byte>();
-                var dstIdx = dest.GetIndexData<byte>();
-                if (srcIdx.Length > 0)
-                    NativeArray<byte>.Copy(srcIdx, dstIdx, srcIdx.Length);
-
-                dest.subMeshCount = source.subMeshCount;
-                for (int i = 0; i < source.subMeshCount; i++)
-                    dest.SetSubMesh(i, source.GetSubMesh(i));
-
-                Mesh.ApplyAndDisposeWritableMeshData(writableData, newMesh);
+                return newMesh;
             }
-            
-            AssetDatabase.AddObjectToAsset(newMesh, this);
-            
-            if (__meshCache == null) 
-                __meshCache = new Dictionary<Mesh, Mesh>();
-                    
-            __meshCache[sharedMesh] = newMesh;
-
-            return newMesh;
         }
 
         public BlobAssetReference<InstanceAnimationDefinition> CreateAnimationDefinition(
