@@ -430,6 +430,9 @@ namespace ZG
                 pixelIndex += 2;
             }
             
+            var positions = new Vector3[boneCount];
+            var scales = new Vector3[boneCount];
+            var rotations = new Quaternion[boneCount];
             // Setup bind pose (frame 0)
             for (int boneIndex = 0; boneIndex < boneCount; ++boneIndex)
             {
@@ -439,12 +442,25 @@ namespace ZG
                     throw new InvalidOperationException(
                         $"SkinnedMeshRenderer bone at index {boneIndex} is null while baking animation texture.");
                 }
-
+                
+                positions[boneIndex] = bone.localPosition;
+                scales[boneIndex] = bone.localScale;
+                rotations[boneIndex] = bone.localRotation;
+                
                 WriteBoneMatrixPixels(ref pixels, ref pixelIndex, bone.localToWorldMatrix * bindposes[boneIndex]);
             }
 
             for (int clipIndex = 0; clipIndex < clipArray.Length; ++clipIndex)
             {
+                for (int boneIndex = 0; boneIndex < boneCount; ++boneIndex)
+                {
+                    var bone = bones[boneIndex];
+                    
+                    bone.localPosition = positions[boneIndex];
+                    bone.localScale = scales[boneIndex];
+                    bone.localRotation = rotations[boneIndex];
+                }
+
                 var clip = clipArray[clipIndex];
                 var totalFrames = (int)(clip.length * targetFrameRate);
                 for (int frame = 0; frame < totalFrames; ++frame)
@@ -454,12 +470,7 @@ namespace ZG
                     for (int boneIndex = 0; boneIndex < boneCount; ++boneIndex)
                     {
                         var bone = bones[boneIndex];
-                        if (bone == null)
-                        {
-                            throw new InvalidOperationException(
-                                $"SkinnedMeshRenderer bone at index {boneIndex} is null while sampling clip '{clip.name}'.");
-                        }
-
+                        
                         WriteBoneMatrixPixels(ref pixels, ref pixelIndex, bone.localToWorldMatrix * bindposes[boneIndex]);
                     }
                 }
@@ -879,6 +890,8 @@ namespace ZG
 
                     Mesh.ApplyAndDisposeWritableMeshData(writableData, newMesh);
                 }
+
+                newMesh.UploadMeshData(true);
 
                 AssetDatabase.AddObjectToAsset(newMesh, this);
 
