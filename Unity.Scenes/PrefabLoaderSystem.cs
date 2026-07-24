@@ -158,14 +158,30 @@ namespace ZG
     {
         public const float SAVED_TIME_MIN = 10.0f;
 
+        internal enum Flag
+        {
+            Paused = 0x01, 
+            ReleaseAllRightNow = 0x02 | Paused
+        }
+
+        public static readonly SharedStatic<int> Value = SharedStatic<int>.GetOrCreate<Flag>();
+
         private class SavedTime
         {
             public static readonly SharedStatic<float> Value = SharedStatic<float>.GetOrCreate<SavedTime>();
         }
 
-        private class IsReleaseAllRightNow
+        public static bool isPaused
         {
-            public static readonly SharedStatic<int> Value = SharedStatic<int>.GetOrCreate<IsReleaseAllRightNow>();
+            get => Value.Data == (int)Flag.Paused;
+
+            set
+            {
+                if(value)
+                    System.Threading.Interlocked.CompareExchange(ref Value.Data, (int)Flag.Paused, 0);
+                else
+                    System.Threading.Interlocked.CompareExchange(ref Value.Data, 0, (int)Flag.Paused);
+            }
         }
 
         public static float savedTime
@@ -174,15 +190,15 @@ namespace ZG
 
             set => SavedTime.Value.Data = value;
         }
-
+        
         public static void ReleaseAllRightNow()
         {
-            IsReleaseAllRightNow.Value.Data = 1;
+            Value.Data = (int)Flag.ReleaseAllRightNow;
         }
 
         internal static bool _IsReleaseAllRightNow()
         {
-            return System.Threading.Interlocked.CompareExchange(ref IsReleaseAllRightNow.Value.Data, 0, 1) == 1;
+            return System.Threading.Interlocked.CompareExchange(ref Value.Data, 0, (int)Flag.ReleaseAllRightNow) == (int)Flag.ReleaseAllRightNow;
         }
     }
 
@@ -234,14 +250,17 @@ namespace ZG
 
                         instances.Remove(result.entityPrefabReference);
                     }
-                    else if (result.status == PrefabLoaderSingleton.Status.None &&
+                    else if (result.status == PrefabLoaderSingleton.Status.None && 
                              entityPrefabReferences.IndexOf(result.entityPrefabReference) == -1)
                         entityPrefabReferences.Add(result.entityPrefabReference);
                 }
 
-                int source = entityPrefabReferences.Length;
+                int source;
                 if (isReleaseAllRightNow)
                 {
+                    source = 0;
+                    entityPrefabReferences.Clear();
+                    
                     foreach (var pair in instances)
                     {
                         instance = pair.Value;
@@ -253,6 +272,8 @@ namespace ZG
                 }
                 else
                 {
+                    source = entityPrefabReferences.Length;
+                    
                     foreach (var pair in instances)
                     {
                         instance = pair.Value;
@@ -298,9 +319,11 @@ namespace ZG
         {
             public double time;
 
-            [ReadOnly] public NativeArray<Entity> entityArray;
+            [ReadOnly] 
+            public NativeArray<Entity> entityArray;
 
-            [ReadOnly] public NativeArray<EntityPrefabReference> entityPrefabReferences;
+            [ReadOnly] 
+            public NativeArray<EntityPrefabReference> entityPrefabReferences;
 
             [NativeDisableParallelForRestriction]
             public ComponentLookup<RequestEntityPrefabLoaded> requestEntityPrefabLoadeds;
@@ -368,6 +391,9 @@ namespace ZG
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
+            if (PrefabLoaderSettings.isPaused)
+                return;
+            
             state.CompleteDependency();
 
             bool isReleaseAllRightNow = PrefabLoaderSettings._IsReleaseAllRightNow();
