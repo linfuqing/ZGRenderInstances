@@ -8,11 +8,51 @@ using Unity.Scenes;
 
 namespace ZG
 {
+    internal struct PrefabLoaderSingleton : IComponentData
+    {
+        public enum Status
+        {
+            None,
+            Loaded,
+            InProgressLoad
+        }
+
+        public struct Result
+        {
+            public Status status;
+            public EntityPrefabReference entityPrefabReference;
+        }
+
+        public NativeQueue<Result> results;
+    }
+
+    public struct PrefabLoaderReferences : IComponentData
+    {
+        public NativeList<EntityPrefabReference> unloaded;
+        public NativeList<EntityPrefabReference> loaded;
+        public NativeList<EntityPrefabReference> inProgress;
+
+        public PrefabLoaderReferences(AllocatorManager.AllocatorHandle allocator)
+        {
+            unloaded = new NativeList<EntityPrefabReference>(allocator);
+            loaded = new NativeList<EntityPrefabReference>(allocator);
+            inProgress = new NativeList<EntityPrefabReference>(allocator);
+        }
+
+        public void Dispose()
+        {
+            unloaded.Dispose();
+            loaded.Dispose();
+            inProgress.Dispose();
+        }
+    }
+
     public struct PrefabLoader
     {
         public struct Writer
         {
-            [ReadOnly] private WeakAssetReferenceLoadingData __weakAssetReferenceLoadingData;
+            [ReadOnly]
+            private WeakAssetReferenceLoadingData __weakAssetReferenceLoadingData;
 
             private NativeQueue<PrefabLoaderSingleton.Result> __results;
 
@@ -24,6 +64,12 @@ namespace ZG
 
             public bool TryGetOrLoadPrefabRoot(in EntityPrefabReference entityPrefabReference, out Entity entity)
             {
+                if (PrefabLoaderSettings.isPaused)
+                {
+                    entity = Entity.Null;
+                    return false;
+                }
+
                 PrefabLoaderSingleton.Result result;
                 result.entityPrefabReference = entityPrefabReference;
                 if (__weakAssetReferenceLoadingData.LoadedPrefabs.TryGetValue(entityPrefabReference,
@@ -50,7 +96,8 @@ namespace ZG
 
         public struct ParallelWriter
         {
-            [ReadOnly] private WeakAssetReferenceLoadingData __weakAssetReferenceLoadingData;
+            [ReadOnly]
+            private WeakAssetReferenceLoadingData __weakAssetReferenceLoadingData;
 
             private NativeQueue<PrefabLoaderSingleton.Result>.ParallelWriter __results;
 
@@ -63,6 +110,12 @@ namespace ZG
             public bool TryGetOrLoadPrefabRoot(in EntityPrefabReference entityPrefabReference, out Entity entity)
             {
                 UnityEngine.Assertions.Assert.IsTrue(entityPrefabReference.Id.IsValid);
+
+                if (PrefabLoaderSettings.isPaused)
+                {
+                    entity = Entity.Null;
+                    return false;
+                }
 
                 PrefabLoaderSingleton.Result result;
                 result.entityPrefabReference = entityPrefabReference;
@@ -88,7 +141,8 @@ namespace ZG
             }
         }
 
-        [ReadOnly] private WeakAssetReferenceLoadingData __weakAssetReferenceLoadingData;
+        [ReadOnly]
+        private WeakAssetReferenceLoadingData __weakAssetReferenceLoadingData;
 
         private EntityQuery __group;
 
@@ -136,32 +190,14 @@ namespace ZG
         }
     }
 
-    internal struct PrefabLoaderSingleton : IComponentData
-    {
-        public enum Status
-        {
-            None,
-            Loaded,
-            InProgressLoad
-        }
-
-        public struct Result
-        {
-            public Status status;
-            public EntityPrefabReference entityPrefabReference;
-        }
-
-        public NativeQueue<Result> results;
-    }
-
     public static class PrefabLoaderSettings
     {
         public const float SAVED_TIME_MIN = 10.0f;
 
         internal enum Flag
         {
-            Paused = 0x01, 
-            ReleaseAllRightNow = 0x02 | Paused
+            Paused = 0x01,
+            ReleaseAllRightNow = 0x02
         }
 
         public static readonly SharedStatic<int> Value = SharedStatic<int>.GetOrCreate<Flag>();
@@ -171,17 +207,24 @@ namespace ZG
             public static readonly SharedStatic<float> Value = SharedStatic<float>.GetOrCreate<SavedTime>();
         }
 
-        public static bool isPaused
-        {
-            get => Value.Data == (int)Flag.Paused;
+        public static bool isPaused =>
+            (Value.Data & (int)Flag.Paused) != 0;
 
-            set
+        private static void _SetFlags(Flag flags)
+        {
+            int comparand;
+            int result;
+            do
             {
-                if(value)
-                    System.Threading.Interlocked.CompareExchange(ref Value.Data, (int)Flag.Paused, 0);
-                else
-                    System.Threading.Interlocked.CompareExchange(ref Value.Data, 0, (int)Flag.Paused);
+                comparand = Value.Data;
+                result = comparand | (int)flags;
+                if (result == comparand)
+                    return;
             }
+            while (System.Threading.Interlocked.CompareExchange(
+                       ref Value.Data,
+                       result,
+                       comparand) != comparand);
         }
 
         public static float savedTime
@@ -190,15 +233,42 @@ namespace ZG
 
             set => SavedTime.Value.Data = value;
         }
-        
-        public static void ReleaseAllRightNow()
+
+        public static void PauseLoading()
         {
-            Value.Data = (int)Flag.ReleaseAllRightNow;
+            _SetFlags(Flag.Paused);
         }
 
-        internal static bool _IsReleaseAllRightNow()
+        public static void ResumeLoading()
         {
-            return System.Threading.Interlocked.CompareExchange(ref Value.Data, 0, (int)Flag.ReleaseAllRightNow) == (int)Flag.ReleaseAllRightNow;
+            // A new activation supersedes every command from the old generation.
+            System.Threading.Interlocked.Exchange(ref Value.Data, 0);
+        }
+
+        public static void ReleaseAllRightNow()
+        {
+            // Release is a one-shot command; Paused remains set after consumption.
+            _SetFlags(Flag.Paused | Flag.ReleaseAllRightNow);
+        }
+
+        internal static bool _ConsumeReleaseAllRightNow()
+        {
+            int comparand;
+            int result;
+            do
+            {
+                comparand = Value.Data;
+                if ((comparand & (int)Flag.ReleaseAllRightNow) == 0)
+                    return false;
+
+                result = comparand & ~(int)Flag.ReleaseAllRightNow;
+            }
+            while (System.Threading.Interlocked.CompareExchange(
+                       ref Value.Data,
+                       result,
+                       comparand) != comparand);
+
+            return true;
         }
     }
 
@@ -214,6 +284,12 @@ namespace ZG
             public Entity entity;
         }
 
+        private struct PendingUnload
+        {
+            public uint updateVersion;
+            public EntityPrefabReference reference;
+        }
+
         private struct Temp
         {
             public EntityPrefabReference entityPrefabReference;
@@ -223,63 +299,155 @@ namespace ZG
         [BurstCompile]
         private struct Collect : IJob
         {
-            public bool isReleaseAllRightNow;
+            public bool isPaused;
+            public bool isReleasing;
             public float savedTime;
             public double time;
+            public uint updateVersion;
+            public int releaseCapacity;
+            public PrefabLoaderReferences references;
+            [ReadOnly]
+            public NativeParallelHashSet<Hash128> retainedSceneGuids;
+            public NativeList<PendingUnload> pendingUnloads;
             public NativeQueue<PrefabLoaderSingleton.Result> results;
             public NativeParallelHashMap<EntityPrefabReference, Instance> instances;
-            public NativeList<EntityPrefabReference> entityPrefabReferences;
             public NativeList<Entity> entities;
+
+            private void CancelPendingUnload(in EntityPrefabReference reference)
+            {
+                for (int i = pendingUnloads.Length - 1; i >= 0; --i)
+                {
+                    if (pendingUnloads[i].reference == reference)
+                        pendingUnloads.RemoveAtSwapBack(i);
+                }
+            }
+
+            private void QueuePendingUnload(in EntityPrefabReference reference)
+            {
+                for (int i = 0; i < pendingUnloads.Length; ++i)
+                {
+                    var pendingUnload = pendingUnloads[i];
+                    if (pendingUnload.reference != reference)
+                        continue;
+
+                    pendingUnload.updateVersion = updateVersion;
+                    pendingUnloads[i] = pendingUnload;
+                    return;
+                }
+
+                pendingUnloads.Add(new PendingUnload
+                {
+                    updateVersion = updateVersion,
+                    reference = reference
+                });
+            }
+
+            private void FlushPendingUnloads()
+            {
+                for (int i = pendingUnloads.Length - 1; i >= 0; --i)
+                {
+                    var pendingUnload = pendingUnloads[i];
+                    var reference = pendingUnload.reference;
+                    if (pendingUnload.updateVersion == updateVersion ||
+                        retainedSceneGuids.Contains(reference.AssetGUID) ||
+                        instances.ContainsKey(reference) ||
+                        references.loaded.IndexOf(reference) != -1 ||
+                        references.inProgress.IndexOf(reference) != -1)
+                    {
+                        continue;
+                    }
+
+                    references.unloaded.Add(reference);
+
+                    pendingUnloads.RemoveAtSwapBack(i);
+                }
+            }
 
             public void Execute()
             {
-                Temp temp;
+                references.loaded.Clear();
+
                 Instance instance;
+                Temp temp;
                 NativeList<Temp> temps = default;
-                while (results.TryDequeue(out var result))
+                if (isPaused)
                 {
-                    if (instances.TryGetValue(result.entityPrefabReference, out instance))
+                    references.inProgress.Clear();
+                    results.Clear();
+                }
+                else
+                {
+                    foreach (var reference in references.inProgress)
                     {
-                        temp.entityPrefabReference = result.entityPrefabReference;
-                        temp.entity = instance.entity;
+                        CancelPendingUnload(reference);
 
-                        if (!temps.IsCreated)
-                            temps = new NativeList<Temp>(results.Count, Allocator.Temp);
-
-                        temps.Add(temp);
-
-                        instances.Remove(result.entityPrefabReference);
+                        if (references.loaded.IndexOf(reference) == -1)
+                            references.loaded.Add(reference);
                     }
-                    else if (result.status == PrefabLoaderSingleton.Status.None && 
-                             entityPrefabReferences.IndexOf(result.entityPrefabReference) == -1)
-                        entityPrefabReferences.Add(result.entityPrefabReference);
+
+                    references.inProgress.Clear();
+
+                    while (results.TryDequeue(out var result))
+                    {
+                        if (instances.TryGetValue(result.entityPrefabReference, out instance))
+                        {
+                            CancelPendingUnload(result.entityPrefabReference);
+
+                            temp.entityPrefabReference = result.entityPrefabReference;
+                            temp.entity = instance.entity;
+
+                            if (!temps.IsCreated)
+                                temps = new NativeList<Temp>(results.Count, Allocator.Temp);
+
+                            temps.Add(temp);
+
+                            instances.Remove(result.entityPrefabReference);
+                        }
+                        else if (result.status == PrefabLoaderSingleton.Status.None &&
+                                 references.inProgress.IndexOf(result.entityPrefabReference) == -1)
+                        {
+                            CancelPendingUnload(result.entityPrefabReference);
+
+                            references.inProgress.Add(result.entityPrefabReference);
+                        }
+                    }
                 }
 
-                int source;
-                if (isReleaseAllRightNow)
+                references.unloaded.Clear();
+                NativeList<EntityPrefabReference> releasedReferences = default;
+                if (isReleasing)
                 {
-                    source = 0;
-                    entityPrefabReferences.Clear();
-                    
                     foreach (var pair in instances)
                     {
                         instance = pair.Value;
 
-                        entityPrefabReferences.Add(pair.Key);
+                        QueuePendingUnload(pair.Key);
+
+                        if (!releasedReferences.IsCreated)
+                            releasedReferences = new NativeList<EntityPrefabReference>(
+                                releaseCapacity,
+                                Allocator.Temp);
+
+                        releasedReferences.Add(pair.Key);
 
                         entities.Add(instance.entity);
                     }
                 }
-                else
+                else if (!isPaused)
                 {
-                    source = entityPrefabReferences.Length;
-                    
                     foreach (var pair in instances)
                     {
                         instance = pair.Value;
                         if (instance.time < time)
                         {
-                            entityPrefabReferences.Add(pair.Key);
+                            QueuePendingUnload(pair.Key);
+
+                            if (!releasedReferences.IsCreated)
+                                releasedReferences = new NativeList<EntityPrefabReference>(
+                                    releaseCapacity,
+                                    Allocator.Temp);
+
+                            releasedReferences.Add(pair.Key);
 
                             entities.Add(instance.entity);
 
@@ -290,11 +458,13 @@ namespace ZG
                     }
                 }
 
-                int destination = entityPrefabReferences.Length;
-                for (int i = source; i < destination; ++i)
-                    instances.Remove(entityPrefabReferences[i]);
+                if (releasedReferences.IsCreated)
+                {
+                    foreach (var reference in releasedReferences)
+                        instances.Remove(reference);
 
-                entityPrefabReferences.ResizeUninitialized(source);
+                    releasedReferences.Dispose();
+                }
 
                 instance.time = time + savedTime;
                 int numTemps = temps.IsCreated ? temps.Length : 0;
@@ -311,6 +481,8 @@ namespace ZG
 
                     temps.Dispose();
                 }
+
+                FlushPendingUnloads();
             }
         }
 
@@ -347,9 +519,14 @@ namespace ZG
 
         private ComponentLookup<RequestEntityPrefabLoaded> __requestEntityPrefabLoadeds;
 
+        private EntityQuery __prefabLoadRequestQuery;
+        private EntityQuery __sceneQuery;
         private EntityArchetype __entityArchetype;
         private NativeParallelHashMap<EntityPrefabReference, Instance> __instances;
+        private NativeList<PendingUnload> __pendingUnloads;
+        private NativeParallelHashSet<Hash128> __retainedSceneGuids;
         private NativeQueue<PrefabLoaderSingleton.Result> __results;
+        private uint __updateVersion;
 
         [BurstCompile]
         public void OnCreate(ref SystemState state)
@@ -366,6 +543,25 @@ namespace ZG
                     .WithAllRW<PrefabLoaderSingleton>()
                     .Build(ref state);
 
+            using (var builder = new EntityQueryBuilder(Allocator.Temp))
+                builder
+                    .WithAllRW<PrefabLoaderReferences>()
+                    .Build(ref state);
+
+            using (var builder = new EntityQueryBuilder(Allocator.Temp))
+                __sceneQuery = builder
+                    .WithAll<SceneReference>()
+                    .WithOptions(EntityQueryOptions.IncludeDisabledEntities)
+                    .Build(ref state);
+
+            using (var builder = new EntityQueryBuilder(Allocator.Temp))
+                __prefabLoadRequestQuery = builder
+                    .WithAll<RequestEntityPrefabLoaded>()
+                    // CompleteLoad adds this component to the prefab root. The
+                    // default Prefab exclusion keeps only real request entities.
+                    .WithOptions(EntityQueryOptions.IncludeDisabledEntities)
+                    .Build(ref state);
+
             var entityManager = state.EntityManager;
             using (var componentTypes = new NativeList<ComponentType>(Allocator.Temp)
                    {
@@ -374,47 +570,100 @@ namespace ZG
                 __entityArchetype = entityManager.CreateArchetype(componentTypes.AsArray());
 
             __instances = new NativeParallelHashMap<EntityPrefabReference, Instance>(1, Allocator.Persistent);
+            __pendingUnloads = new NativeList<PendingUnload>(1, Allocator.Persistent);
+            __retainedSceneGuids = new NativeParallelHashSet<Hash128>(1, Allocator.Persistent);
             __results = new NativeQueue<PrefabLoaderSingleton.Result>(Allocator.Persistent);
 
             PrefabLoaderSingleton singleton;
             singleton.results = __results;
             entityManager.CreateSingleton(singleton);
+
+            var references = new PrefabLoaderReferences(Allocator.Persistent);
+            entityManager.CreateSingleton(references);
         }
 
         [BurstCompile]
         public void OnDestroy(ref SystemState state)
         {
             __instances.Dispose();
+            __pendingUnloads.Dispose();
+            __retainedSceneGuids.Dispose();
             __results.Dispose();
+
+            SystemAPI.GetSingleton<PrefabLoaderReferences>().Dispose();
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            if (PrefabLoaderSettings.isPaused)
-                return;
-            
+            var references = SystemAPI.GetSingletonRW<PrefabLoaderReferences>().ValueRW;
+            references.unloaded.Clear();
+
             state.CompleteDependency();
 
-            bool isReleaseAllRightNow = PrefabLoaderSettings._IsReleaseAllRightNow();
+            bool isReleaseAllRightNow =
+                PrefabLoaderSettings._ConsumeReleaseAllRightNow();
+            bool isPaused = PrefabLoaderSettings.isPaused;
             int count = __results.Count;
-            if (!isReleaseAllRightNow && count < 1)
+            int instanceCount = __instances.Count();
+            if (!isReleaseAllRightNow &&
+                count < 1 &&
+                references.inProgress.IsEmpty &&
+                __pendingUnloads.IsEmpty)
                 return;
 
             var worldUpdateAllocator = state.WorldUpdateAllocator;
-            var entityPrefabReferences = new NativeList<EntityPrefabReference>(count, worldUpdateAllocator);
-            var entities = new NativeList<Entity>(count, worldUpdateAllocator);
+            int releaseCapacity =
+                isReleaseAllRightNow ? math.max(1, instanceCount) : 1;
+            //var entityPrefabReferences = new NativeList<EntityPrefabReference>(count, worldUpdateAllocator);
+            var entities = new NativeList<Entity>(
+                isReleaseAllRightNow ? instanceCount : isPaused ? 0 : count,
+                worldUpdateAllocator);
 
             float savedTime = PrefabLoaderSettings.savedTime;
             double time = SystemAPI.Time.ElapsedTime;
 
+            ++__updateVersion;
+            if (!__pendingUnloads.IsEmpty)
+            {
+                __retainedSceneGuids.Clear();
+
+                int retainedGuidCapacity =
+                    __sceneQuery.CalculateEntityCount() +
+                    __prefabLoadRequestQuery.CalculateEntityCount();
+                __retainedSceneGuids.Capacity = math.max(
+                    __retainedSceneGuids.Capacity,
+                    math.max(1, retainedGuidCapacity));
+
+                using (var sceneReferences =
+                       __sceneQuery.ToComponentDataArray<SceneReference>(Allocator.Temp))
+                {
+                    foreach (var sceneReference in sceneReferences)
+                        __retainedSceneGuids.Add(sceneReference.SceneGUID);
+                }
+
+                using (var prefabLoadRequests =
+                       __prefabLoadRequestQuery
+                           .ToComponentDataArray<RequestEntityPrefabLoaded>(Allocator.Temp))
+                {
+                    foreach (var prefabLoadRequest in prefabLoadRequests)
+                        __retainedSceneGuids.Add(prefabLoadRequest.Prefab.AssetGUID);
+                }
+            }
+
             Collect collect;
-            collect.isReleaseAllRightNow = isReleaseAllRightNow;
+            collect.isPaused = isPaused;
+            collect.isReleasing = isReleaseAllRightNow;
             collect.savedTime = savedTime;
             collect.time = time;
+            collect.updateVersion = __updateVersion;
+            collect.releaseCapacity = releaseCapacity;
+            collect.references = references;
+            collect.retainedSceneGuids = __retainedSceneGuids;
+            collect.pendingUnloads = __pendingUnloads;
             collect.results = __results;
             collect.instances = __instances;
-            collect.entityPrefabReferences = entityPrefabReferences;
+            //.entityPrefabReferences = entityPrefabReferences;
             collect.entities = entities;
             collect.RunByRef();
 
@@ -422,10 +671,10 @@ namespace ZG
             if (!entities.IsEmpty)
                 entityManager.DestroyEntity(entities.AsArray());
 
-            if (!entityPrefabReferences.IsEmpty)
+            if (!references.loaded.IsEmpty)
             {
                 var entityArray =
-                    entityManager.CreateEntity(__entityArchetype, entityPrefabReferences.Length, worldUpdateAllocator);
+                    entityManager.CreateEntity(__entityArchetype, references.loaded.Length, worldUpdateAllocator);
 
                 __requestEntityPrefabLoadeds.Update(ref state);
 
@@ -434,7 +683,7 @@ namespace ZG
                 Apply apply;
                 apply.time = time + savedTime;
                 apply.entityArray = entityArray;
-                apply.entityPrefabReferences = entityPrefabReferences.AsArray();
+                apply.entityPrefabReferences = references.loaded.AsArray();
                 apply.requestEntityPrefabLoadeds = __requestEntityPrefabLoadeds;
                 apply.instances = __instances.AsParallelWriter();
 
