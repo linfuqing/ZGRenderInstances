@@ -199,7 +199,13 @@ namespace ZG
     public struct RenderList : IComponentData
     {
         //https://discussions.unity.com/t/gpu-instancing-limited-to-128-per-call-on-adreno-540/737547
+#if UNITY_WEBGL
+        // Unity's WebGL instancing variants use 32 entries per instancing
+        // draw batch in a standard browser.
+        public static readonly int MaxInstanceCount = 32;
+#else
         public static readonly int MaxInstanceCount = 64;//SystemInfo.maxConstantBufferSize / 128;
+#endif
         public static readonly int MinComputeBufferCount = MaxInstanceCount * 4;
         public static readonly Matrix4x4[] Matrices = new Matrix4x4[MaxInstanceCount];
         public static readonly Dictionary<int, List<ComputeBuffer>> ComputeBuffers = new Dictionary<int, List<ComputeBuffer>>();
@@ -207,24 +213,154 @@ namespace ZG
         public readonly int InstanceID;
         
         private uint __constantTypeVersion;
+        private int __constantBufferByteSize;
+        private int __constantBufferOffsetAlignment;
         private int __constantTypeEntityCount;
         private int __sharedDataCount;
         private NativeHashMap<FixedString128Bytes, int> __bufferIDs;
         private NativeHashMap<int, int> __computeBufferStrideToIndices;
         private NativeList<int> __byteOffsets;
-        
-#if UNITY_WEBGL
         private NativeList<byte> __bytes;
-#endif
 
-        public static int ComputeCount(int sharedDataCount, int constantTypeEntityCount, int alignment, int stride)
+        private static int __GreatestCommonDivisor(int x, int y)
         {
-            int bytes = (math.min(constantTypeEntityCount, sharedDataCount) - 1) * 
-                        ((stride + alignment - 1) / alignment) * alignment;
-            
-            return (bytes + stride - 1) / stride + constantTypeEntityCount;
-            //return constantTypeEntityCount + (sharedDataCount * alignment + stride - 1) / stride;
-            //return math.max(constantTypeEntityCount, (alignment + stride - 1) / stride) * sharedDataCount;
+            while (y != 0)
+            {
+                int remainder = x % y;
+                x = y;
+                y = remainder;
+            }
+
+            return x;
+        }
+
+        /*public static int ComputeCount(
+            int sharedDataCount,
+            int constantTypeEntityCount,
+            int alignment,
+            int stride)
+        {
+            return ComputeCount(
+                sharedDataCount,
+                constantTypeEntityCount,
+                1,
+                alignment,
+                stride);
+        }*/
+
+        public static int ComputeCount(
+            int sharedDataCount,
+            int constantTypeEntityCount,
+            int constantTypeCountForStride,
+            int alignment,
+            int stride)
+        {
+            if (constantTypeEntityCount < 1 || stride < 1)
+                return 0;
+
+            alignment = System.Math.Max(alignment, 1);
+            sharedDataCount = System.Math.Max(sharedDataCount, 1);
+            constantTypeCountForStride = System.Math.Max(constantTypeCountForStride, 1);
+
+            long segmentUpperBound = System.Math.Min(
+                    (long)constantTypeEntityCount,
+                    (long)sharedDataCount * constantTypeCountForStride),
+                maximumPadding = alignment - __GreatestCommonDivisor(alignment, stride),
+                byteCount = checked(
+                    (long)constantTypeEntityCount * stride +
+                    (segmentUpperBound - 1L) * maximumPadding),
+                count = checked((byteCount + stride - 1L) / stride);
+
+            return checked((int)count);
+        }
+
+        public static int GetConstantBufferByteSize()
+        {
+            return SystemInfo.maxConstantBufferSize;
+        }
+
+        public static int ComputeBindingCapacityCount(
+            int constantBufferByteSize,
+            int stride)
+        {
+            if (constantBufferByteSize < 1 || stride < 1)
+                return 0;
+
+            return checked((int)(
+                ((long)constantBufferByteSize + stride - 1L) /
+                stride));
+        }
+
+        public static int ComputeRangeTailCount(
+            int constantBufferByteSize,
+            int stride)
+        {
+            return math.max(
+                ComputeBindingCapacityCount(
+                    constantBufferByteSize,
+                    stride) -
+                1,
+                0);
+        }
+
+        public static int ComputeBufferCapacityCount(
+            int sharedDataCount,
+            int constantTypeEntityCount,
+            int constantTypeCountForStride,
+            int constantBufferByteSize,
+            int alignment,
+            int stride)
+        {
+            if (alignment < 1)
+                return ComputeBindingCapacityCount(
+                    constantBufferByteSize,
+                    stride);
+
+            int count = ComputeCount(
+                sharedDataCount,
+                constantTypeEntityCount,
+                constantTypeCountForStride,
+                alignment,
+                stride);
+            if (count < 1)
+                return 0;
+
+            return checked(
+                count +
+                ComputeRangeTailCount(
+                    constantBufferByteSize,
+                    stride));
+        }
+
+        public static int ComputeMaxInstanceCount(
+            int constantBufferByteSize,
+            int constantBufferOffsetAlignment,
+            int stride)
+        {
+            if (constantBufferByteSize < 1 || stride < 1)
+                return 0;
+
+            int count = math.min(
+                MaxInstanceCount,
+                constantBufferByteSize / stride);
+            if (constantBufferOffsetAlignment < 1)
+                return count;
+
+            int countAlignment =
+                constantBufferOffsetAlignment /
+                __GreatestCommonDivisor(
+                    constantBufferOffsetAlignment,
+                    stride);
+            return count / countAlignment * countAlignment;
+        }
+
+        public static int ComputeBindingByteOffset(
+            int constantBufferOffsetAlignment,
+            int sourceByteOffset)
+        {
+            return constantBufferOffsetAlignment > 0 ?
+                sourceByteOffset :
+                0;
         }
 
         public RenderList(int instanceID, in AllocatorManager.AllocatorHandle allocator)
@@ -241,13 +377,12 @@ namespace ZG
             __sharedDataCount = 0;
             __constantTypeEntityCount = 0;
             __constantTypeVersion = 0;
+            __constantBufferByteSize = 0;
+            __constantBufferOffsetAlignment = 0;
             __bufferIDs = new NativeHashMap<FixedString128Bytes, int>(1, allocator);
             __computeBufferStrideToIndices = new NativeHashMap<int, int>(1, allocator);
             __byteOffsets = new NativeList<int>(allocator);
-            
-#if UNITY_WEBGL
             __bytes = new NativeList<byte>(allocator);
-#endif
         }
 
         public void Dispose()
@@ -264,184 +399,301 @@ namespace ZG
             __bufferIDs.Dispose();
             __computeBufferStrideToIndices.Dispose();
             __byteOffsets.Dispose();
-            
-#if UNITY_WEBGL
             __bytes.Dispose();
-#endif
         }
 
         public void Begin(
             int sharedDataCount, 
             int constantTypeEntityCount, 
-            uint constantTypeVersion, 
-            in NativeArray<RenderConstantType> constantTypes, 
+            uint constantTypeVersion,
+            in NativeArray<RenderConstantType> constantTypes,
+            in NativeHashMap<int, int> constantTypeCountsByStride,
             ref DynamicBuffer<RenderConstantBuffer> constantBuffers)
         {
             End();
 
             var computeBuffers = __GetComputeBuffers();
             if (computeBuffers == null || constantTypeEntityCount < 1)
-                constantBuffers.Clear();
-            else
             {
-                ComputeBuffer computeBuffer;
-                RenderConstantType constantType;
-                int i, 
-                    stride, 
-                    computeBufferIndex, 
-                    numConstantTypes = constantTypes.Length, 
-                    alignment = SystemInfo.constantBufferOffsetAlignment;
-                if (sharedDataCount > __sharedDataCount || 
-                    constantTypeEntityCount > __constantTypeEntityCount ||
-                    ChangeVersionUtility.DidChange(constantTypeVersion, __constantTypeVersion))
+                constantBuffers.Clear();
+                return;
+            }
+
+            int constantBufferByteSize = GetConstantBufferByteSize();
+            if (!SystemInfo.supportsSetConstantBuffer ||
+                constantBufferByteSize < 1)
+                throw new NotSupportedException(
+                    "The current graphics device does not support constant buffer bindings.");
+
+            int constantBufferOffsetAlignment =
+                    SystemInfo.constantBufferOffsetAlignment,
+                writeAlignment =
+                    math.max(constantBufferOffsetAlignment, 1);
+            bool useConstantBufferRange =
+                    constantBufferOffsetAlignment > 0,
+                useStagingBytes = !useConstantBufferRange;
+#if UNITY_WEBGL
+            useStagingBytes = true;
+#endif
+
+            bool bindingModeChanged =
+                constantBufferOffsetAlignment !=
+                __constantBufferOffsetAlignment;
+            ComputeBuffer computeBuffer;
+            RenderConstantType constantType;
+            int i,
+                stride,
+                constantTypeCountForStride,
+                computeBufferIndex,
+                numConstantTypes = constantTypes.Length;
+            if (sharedDataCount > __sharedDataCount ||
+                constantTypeEntityCount > __constantTypeEntityCount ||
+                ChangeVersionUtility.DidChange(
+                    constantTypeVersion,
+                    __constantTypeVersion) ||
+                constantBufferByteSize != __constantBufferByteSize ||
+                bindingModeChanged)
+            {
+                __sharedDataCount =
+                    math.max(__sharedDataCount, sharedDataCount);
+                __constantTypeEntityCount =
+                    math.max(
+                        __constantTypeEntityCount,
+                        constantTypeEntityCount);
+                __constantTypeVersion = constantTypeVersion;
+                __constantBufferByteSize = constantBufferByteSize;
+                __constantBufferOffsetAlignment =
+                    constantBufferOffsetAlignment;
+
+                int count;
+                bool isComputeBufferValid;
+                ComputeBufferMode computeBufferMode;
+                for (i = 0; i < numConstantTypes; ++i)
                 {
-                    __sharedDataCount = Mathf.Max(__sharedDataCount, sharedDataCount);
-                    __constantTypeEntityCount = Mathf.Max(__constantTypeEntityCount, constantTypeEntityCount);
-                    
-                    __constantTypeVersion = constantTypeVersion;
-                    
-                    int count;
-                    for (i = 0; i < numConstantTypes; ++i)
+                    constantType = constantTypes[i];
+                    stride = TypeManager
+                        .GetTypeInfo(
+                            TypeManager.GetTypeIndexFromStableTypeHash(
+                                constantType.stableTypeHash))
+                        .TypeSize;
+                    if (stride < 1)
+                        continue;
+
+                    if (constantBufferByteSize < stride)
+                        throw new NotSupportedException(
+                            $"Constant buffer size {constantBufferByteSize} is smaller than stride {stride}.");
+
+                    constantTypeCountsByStride.TryGetValue(
+                        stride,
+                        out constantTypeCountForStride);
+                    count = ComputeBufferCapacityCount(
+                        __sharedDataCount,
+                        __constantTypeEntityCount,
+                        constantTypeCountForStride,
+                        constantBufferByteSize,
+                        constantBufferOffsetAlignment,
+                        stride);
+                    if (useConstantBufferRange)
+                        count = math.max(count, MinComputeBufferCount);
+
+                    if (__computeBufferStrideToIndices.TryGetValue(
+                            stride,
+                            out computeBufferIndex))
                     {
-                        constantType = constantTypes[i];
-                        stride = TypeManager.GetTypeInfo(TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash)).TypeSize;
-                        if(stride < 1)
+                        computeBuffer = computeBuffers[computeBufferIndex];
+                        isComputeBufferValid =
+                            !bindingModeChanged &&
+                            (useConstantBufferRange ?
+                                computeBuffer.count >= count :
+                                computeBuffer.count == count);
+                        if (isComputeBufferValid)
                             continue;
 
-                        count = ComputeCount(__sharedDataCount, __constantTypeEntityCount, alignment, stride);
-                        count = Mathf.Max(count, MinComputeBufferCount);
-                        if (__computeBufferStrideToIndices.TryGetValue(stride, out computeBufferIndex))
-                        {
-                            computeBuffer = computeBuffers[computeBufferIndex];
-                            if (computeBuffer.count < count)
-                                computeBuffer.Dispose();
-                            else
-                                continue;
-                        }
-                        else
-                        {
-                            computeBufferIndex = computeBuffers.Count;
-
-                            __computeBufferStrideToIndices[stride] = computeBufferIndex;
-                        }
-
-                        Debug.Log(
-                            $"Create ComputeBuffer(Count: {count}, Stride: {stride}, Alignment: {alignment}, Constant Type Entity Count: {__constantTypeEntityCount}, Shared Data Count, {__sharedDataCount}, Max Instance Count: {MaxInstanceCount})");
-                        
-                        computeBuffer = new ComputeBuffer(
-                            count, 
-                            stride, 
-                            ComputeBufferType.Constant,
-#if UNITY_WEBGL
-                            ComputeBufferMode.Dynamic
-#else
-                            ComputeBufferMode.SubUpdates
-#endif
-                            );
-
-                        if (computeBufferIndex < computeBuffers.Count)
-                            computeBuffers[computeBufferIndex] = computeBuffer;
-                        else
-                            computeBuffers.Add(computeBuffer);
+                        computeBuffer.Dispose();
                     }
-                }
+                    else
+                    {
+                        computeBufferIndex = computeBuffers.Count;
+                        __computeBufferStrideToIndices[stride] =
+                            computeBufferIndex;
+                    }
 
-                int numComputeBuffers = computeBuffers.Count;
-                constantBuffers.Clear();
-                constantBuffers.ResizeUninitialized(numConstantTypes + numComputeBuffers);
-
-                for (i = 0; i < numComputeBuffers; ++i)
-                    constantBuffers[i + numConstantTypes] = default;
-
-                int byteCount;
 #if UNITY_WEBGL
-                __byteOffsets.ResizeUninitialized(numComputeBuffers * 3);
+                    computeBufferMode = ComputeBufferMode.Dynamic;
+#else
+                    computeBufferMode = useConstantBufferRange ?
+                        ComputeBufferMode.SubUpdates :
+                        ComputeBufferMode.Dynamic;
+#endif
+                    Debug.Log(
+                        $"Create ComputeBuffer(Count: {count}, Stride: {stride}, Alignment: {constantBufferOffsetAlignment}, Constant Type Entity Count: {__constantTypeEntityCount}, Shared Data Count: {__sharedDataCount}, Max Instance Count: {MaxInstanceCount}, Constant Buffer Byte Size: {constantBufferByteSize})");
 
-                int byteOffsetIndex = numComputeBuffers << 1;
-                for (i = 0; i < numComputeBuffers; ++i)
-                    __byteOffsets[i + byteOffsetIndex] = -1;
+                    computeBuffer = new ComputeBuffer(
+                        count,
+                        stride,
+                        ComputeBufferType.Constant,
+                        computeBufferMode);
 
+                    if (computeBufferIndex < computeBuffers.Count)
+                        computeBuffers[computeBufferIndex] = computeBuffer;
+                    else
+                        computeBuffers.Add(computeBuffer);
+                }
+            }
+
+            int numComputeBuffers = computeBuffers.Count;
+            constantBuffers.Clear();
+            constantBuffers.ResizeUninitialized(
+                numConstantTypes + numComputeBuffers);
+
+            for (i = 0; i < numComputeBuffers; ++i)
+                constantBuffers[i + numConstantTypes] = default;
+
+            int byteCount,
+                byteCountIndex = numComputeBuffers,
+                baseByteOffsetIndex = numComputeBuffers << 1;
+            __byteOffsets.ResizeUninitialized(numComputeBuffers * 3);
+            for (i = 0; i < numComputeBuffers; ++i)
+            {
+                __byteOffsets[i] = -1;
+                __byteOffsets[i + byteCountIndex] = 0;
+                __byteOffsets[i + baseByteOffsetIndex] = -1;
+            }
+
+            if (useStagingBytes)
+            {
                 byteCount = 0;
                 for (i = 0; i < numConstantTypes; ++i)
                 {
                     constantType = constantTypes[i];
                     stride = TypeManager
-                        .GetTypeInfo(TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash)).TypeSize;
+                        .GetTypeInfo(
+                            TypeManager.GetTypeIndexFromStableTypeHash(
+                                constantType.stableTypeHash))
+                        .TypeSize;
                     if (stride < 1)
                         continue;
 
-                    computeBufferIndex = __computeBufferStrideToIndices[stride];
-                    ref var currentByteOffset = ref __byteOffsets.ElementAt(computeBufferIndex + byteOffsetIndex);
-                    if (currentByteOffset < 0)
-                    {
-                        currentByteOffset = byteCount;
-                        
-                        ref var currentByteCount = ref __byteOffsets.ElementAt(computeBufferIndex + numComputeBuffers);
+                    computeBufferIndex =
+                        __computeBufferStrideToIndices[stride];
+                    ref var currentBaseByteOffset =
+                        ref __byteOffsets.ElementAt(
+                            computeBufferIndex +
+                            baseByteOffsetIndex);
+                    if (currentBaseByteOffset >= 0)
+                        continue;
 
-                        currentByteCount = ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride) *
-                                           stride;
-                        
-                        byteCount += currentByteCount;
-                    }
+                    currentBaseByteOffset = byteCount;
+                    ref var currentByteCount =
+                        ref __byteOffsets.ElementAt(
+                            computeBufferIndex +
+                            byteCountIndex);
+
+                    constantTypeCountsByStride.TryGetValue(
+                        stride,
+                        out constantTypeCountForStride);
+                    currentByteCount =
+                        ComputeCount(
+                            sharedDataCount,
+                            constantTypeEntityCount,
+                            constantTypeCountForStride,
+                            writeAlignment,
+                            stride) *
+                        stride;
+                    byteCount += currentByteCount;
                 }
-                
-                __bytes.ResizeUninitialized(byteCount);
-#else
-                __byteOffsets.ResizeUninitialized(numComputeBuffers << 1);
-#endif
-                for (i = 0; i < numComputeBuffers; ++i)
-                    __byteOffsets[i] = -1;
 
-                int computeBufferOffset;
-                NativeArray<byte> bytes;
-                for (i = 0; i < numConstantTypes; ++i)
+                __bytes.ResizeUninitialized(byteCount);
+            }
+            else
+                __bytes.Clear();
+
+            int baseByteOffset,
+                computeBufferOffset;
+            NativeArray<byte> bytes;
+            for (i = 0; i < numConstantTypes; ++i)
+            {
+                constantType = constantTypes[i];
+                stride = TypeManager
+                    .GetTypeInfo(
+                        TypeManager.GetTypeIndexFromStableTypeHash(
+                            constantType.stableTypeHash))
+                    .TypeSize;
+                if (stride < 1)
                 {
-                    constantType = constantTypes[i];
-                    stride = TypeManager.GetTypeInfo(TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash)).TypeSize;
-                    if (stride < 1)
+                    constantBuffers[i] = default;
+                    continue;
+                }
+
+                computeBufferIndex =
+                    __computeBufferStrideToIndices[stride];
+                computeBufferOffset =
+                    computeBufferIndex + numConstantTypes;
+                if (!constantBuffers[computeBufferOffset].isCreated)
+                {
+                    if (useStagingBytes)
                     {
-                        constantBuffers[i] = default;
-                        
-                        continue;
+                        byteCount =
+                            __byteOffsets[
+                                computeBufferIndex +
+                                byteCountIndex];
+                        baseByteOffset =
+                            __byteOffsets[
+                                computeBufferIndex +
+                                baseByteOffsetIndex];
+                        bytes = __bytes.AsArray().GetSubArray(
+                            baseByteOffset,
+                            byteCount);
+                        if (useConstantBufferRange)
+                            baseByteOffset = 0;
+                    }
+                    else
+                    {
+                        constantTypeCountsByStride.TryGetValue(
+                            stride,
+                            out constantTypeCountForStride);
+                        byteCount =
+                            ComputeCount(
+                                sharedDataCount,
+                                constantTypeEntityCount,
+                                constantTypeCountForStride,
+                                writeAlignment,
+                                stride) *
+                            stride;
+                        __byteOffsets[
+                            computeBufferIndex +
+                            byteCountIndex] = byteCount;
+
+                        computeBuffer =
+                            computeBuffers[computeBufferIndex];
+                        bytes = computeBuffer.BeginWrite<byte>(
+                            0,
+                            byteCount);
+                        baseByteOffset = 0;
                     }
 
-                    computeBufferIndex = __computeBufferStrideToIndices[stride];
-                    computeBufferOffset = computeBufferIndex + numConstantTypes;
-                    if (!constantBuffers[computeBufferOffset].isCreated)
-                    {
-#if UNITY_WEBGL
-                        byteCount = __byteOffsets[computeBufferIndex + numComputeBuffers];
-
-                        bytes = __bytes.AsArray().GetSubArray(__byteOffsets[computeBufferIndex + byteOffsetIndex], byteCount);
-#else
-                        byteCount = ComputeCount(sharedDataCount, constantTypeEntityCount, alignment, stride) *
-                                           stride;
-
-                        __byteOffsets[computeBufferIndex + numComputeBuffers] = byteCount;
-
-                        computeBuffer = computeBuffers[computeBufferIndex];
-
-                        bytes = computeBuffer.BeginWrite<byte>(
-                            0, 
-                            byteCount);
-#endif
-
-                        constantBuffers[computeBufferOffset] = new RenderConstantBuffer(
-                            alignment,
-                            stride, 
+                    constantBuffers[computeBufferOffset] =
+                        new RenderConstantBuffer(
+                            writeAlignment,
+                            stride,
                             computeBufferIndex,
+                            baseByteOffset,
                             ref __byteOffsets,
                             ref bytes);
-                    }
-
-                    constantBuffers[i] = constantBuffers[computeBufferOffset];
                 }
-                constantBuffers.ResizeUninitialized(numConstantTypes);
+
+                constantBuffers[i] =
+                    constantBuffers[computeBufferOffset];
             }
+
+            constantBuffers.ResizeUninitialized(numConstantTypes);
         }
 
         public void End()
         {
+            if (__constantBufferOffsetAlignment < 1)
+                return;
+
             var computeBuffers = __GetComputeBuffers();
             if (computeBuffers != null)
             {
@@ -470,7 +722,7 @@ namespace ZG
 
         public void Apply(
             in NativeArray<RenderSharedData> sharedDatas, 
-            in NativeArray<RenderConstantType> constantTypes, 
+            in NativeArray<RenderConstantType> constantTypes,
             in NativeArray<float4x4> localToWorlds,
             in NativeArray<RenderChunk> chunks,
             CommandBuffer commandBuffer)
@@ -481,45 +733,100 @@ namespace ZG
             ComputeBuffer computeBuffer = null;
             RenderSharedData sharedData;
             RenderConstantType constantType;
-            int i, count, stride = 0, offset = 0, bufferID = 0, constantTypeIndex = -1;
+            int i,
+                count,
+                stride = 0,
+                offset = 0,
+                bufferID = 0,
+                maxInstanceCount = MaxInstanceCount,
+                constantTypeIndex = -1;
             foreach (var chunk in chunks)
             {
+                if (chunk.constantTypeIndex != -1 &&
+                    chunk.constantTypeIndex != constantTypeIndex)
+                {
+                    constantTypeIndex = chunk.constantTypeIndex;
+
+                    constantType = constantTypes[constantTypeIndex];
+                    if (!__bufferIDs.TryGetValue(
+                            constantType.bufferName,
+                            out bufferID))
+                    {
+                        bufferID = Shader.PropertyToID(
+                            constantType.bufferName.ToString());
+                        __bufferIDs[constantType.bufferName] =
+                            bufferID;
+                    }
+
+                    stride = TypeManager
+                        .GetTypeInfo(
+                            TypeManager.GetTypeIndexFromStableTypeHash(
+                                constantType.stableTypeHash))
+                        .TypeSize;
+                    maxInstanceCount = ComputeMaxInstanceCount(
+                        __constantBufferByteSize,
+                        __constantBufferOffsetAlignment,
+                        stride);
+                    if (maxInstanceCount < 1)
+                        throw new NotSupportedException(
+                            $"Constant buffer size {__constantBufferByteSize} is smaller than stride {stride}.");
+
+                    computeBuffer =
+                        computeBuffers[
+                            __computeBufferStrideToIndices[stride]];
+                }
+
                 for (i = 0; i < chunk.count; i += count)
                 {
-                    count = math.min(chunk.count - i, MaxInstanceCount);
+                    count = math.min(
+                        chunk.count - i,
+                        chunk.constantTypeIndex == -1 ?
+                            MaxInstanceCount :
+                            maxInstanceCount);
 
                     if (chunk.constantTypeIndex != -1)
                     {
-                        if (chunk.constantTypeIndex != constantTypeIndex)
-                        {
-                            constantTypeIndex = chunk.constantTypeIndex;
-                            
-                            constantType = constantTypes[constantTypeIndex];
-                            if (!__bufferIDs.TryGetValue(constantType.bufferName, out bufferID))
-                            {
-                                bufferID = Shader.PropertyToID(constantType.bufferName.ToString());
-
-                                __bufferIDs[constantType.bufferName] = bufferID;
-                            }
-
-                            UnityEngine.Assertions.Assert.AreEqual(0,
-                                chunk.constantByteOffset % SystemInfo.constantBufferOffsetAlignment);
-
-                            stride = TypeManager
-                                .GetTypeInfo(TypeManager.GetTypeIndexFromStableTypeHash(constantType.stableTypeHash))
-                                .TypeSize;
-
-                            computeBuffer = computeBuffers[__computeBufferStrideToIndices[stride]];
-                        }
-                        
                         UnityEngine.Assertions.Assert.AreEqual(stride, computeBuffer.stride);
-                        UnityEngine.Assertions.Assert.IsFalse(i + count > computeBuffer.count);
+
+                        int sourceByteOffset =
+                                chunk.constantByteOffset + i * stride,
+                            populatedByteSize = count * stride,
+                            constantBufferByteOffset =
+                                ComputeBindingByteOffset(
+                                    __constantBufferOffsetAlignment,
+                                    sourceByteOffset);
+                        UnityEngine.Assertions.Assert.IsFalse(
+                            populatedByteSize >
+                            __constantBufferByteSize);
+                        if (__constantBufferOffsetAlignment < 1)
+                        {
+                            UnityEngine.Assertions.Assert.IsFalse(
+                                sourceByteOffset +
+                                populatedByteSize >
+                                __bytes.Length);
+                            commandBuffer.SetBufferData(
+                                computeBuffer,
+                                __bytes.AsArray(),
+                                sourceByteOffset,
+                                0,
+                                populatedByteSize);
+                        }
+                        else
+                            UnityEngine.Assertions.Assert.AreEqual(
+                                0,
+                                constantBufferByteOffset %
+                                __constantBufferOffsetAlignment);
+
+                        UnityEngine.Assertions.Assert.IsFalse(
+                            constantBufferByteOffset +
+                            __constantBufferByteSize >
+                            computeBuffer.count * stride);
 
                         commandBuffer.SetGlobalConstantBuffer(
                             computeBuffer,
                             bufferID,
-                            chunk.constantByteOffset + i * stride,
-                            count * stride);
+                            constantBufferByteOffset,
+                            __constantBufferByteSize);
                     }
 
                     NativeArray<Matrix4x4>.Copy(
@@ -583,6 +890,8 @@ namespace ZG
         private BufferLookup<RenderConstantBuffer> __constantBuffers;
         private BufferLookup<RenderChunk> __chunks;
         private BufferLookup<RenderLocalToWorld> __localToWorlds;
+        private uint __constantTypeCountsVersion;
+        private NativeHashMap<int, int> __constantTypeCountsByStride;
         private Camera[] __cameras;
         
         private readonly EntityArchetype __cameraEntityArchetype;
@@ -604,6 +913,8 @@ namespace ZG
             __constantBuffers = system.GetBufferLookup<RenderConstantBuffer>();
             __chunks = system.GetBufferLookup<RenderChunk>();
             __localToWorlds = system.GetBufferLookup<RenderLocalToWorld>();
+            __constantTypeCountsByStride =
+                new NativeHashMap<int, int>(1, Allocator.Persistent);
 
             var entityManager = system.EntityManager;
             __cameraEntityArchetype = entityManager.CreateArchetype(
@@ -636,6 +947,8 @@ namespace ZG
             entities.Dispose();
             
             entityManager.GetComponentData<RenderSingleton>(__system.SystemHandle).Dispose();
+
+            __constantTypeCountsByStride.Dispose();
         }
 
         public void Begin(int constantTypeEntityCount)
@@ -650,6 +963,38 @@ namespace ZG
             singleton.Update(ref entityManager);
             var constantTypes = singleton.constantTypes.AsArray();
             uint constantTypeVersion = singleton.constantTypeVersion;
+            if (ChangeVersionUtility.DidChange(
+                    constantTypeVersion,
+                    __constantTypeCountsVersion))
+            {
+                __constantTypeCountsByStride.Clear();
+
+                int numConstantTypes = constantTypes.Length;
+                if (__constantTypeCountsByStride.Capacity < numConstantTypes)
+                    __constantTypeCountsByStride.Capacity = numConstantTypes;
+
+                int stride, constantTypeCountForStride;
+                for (int constantTypeIndex = 0;
+                     constantTypeIndex < numConstantTypes;
+                     ++constantTypeIndex)
+                {
+                    stride = TypeManager
+                        .GetTypeInfo(
+                            TypeManager.GetTypeIndexFromStableTypeHash(
+                                constantTypes[constantTypeIndex].stableTypeHash))
+                        .TypeSize;
+                    if (stride < 1)
+                        continue;
+
+                    __constantTypeCountsByStride.TryGetValue(
+                        stride,
+                        out constantTypeCountForStride);
+                    __constantTypeCountsByStride[stride] =
+                        constantTypeCountForStride + 1;
+                }
+
+                __constantTypeCountsVersion = constantTypeVersion;
+            }
             
             int allCamerasCount = Camera.allCamerasCount;
             if (allCamerasCount < 1)
@@ -763,8 +1108,9 @@ namespace ZG
                 __renderLists.GetRefRW(entity).ValueRW.Begin(
                     sharedDataCount, 
                     constantTypeEntityCount, 
-                    constantTypeVersion, 
-                    constantTypes, 
+                    constantTypeVersion,
+                    constantTypes,
+                    __constantTypeCountsByStride,
                     ref constantBuffers);
                 
                 __chunks[entity].Clear();
@@ -813,7 +1159,7 @@ namespace ZG
 
             __renderLists.GetRefRW(entity).ValueRW.Apply(
                 singleton.sharedDatas.AsArray(), 
-                singleton.constantTypes.AsArray(), 
+                singleton.constantTypes.AsArray(),
                 __localToWorlds[entity].AsNativeArray().Reinterpret<float4x4>(), 
                 __chunks[entity].AsNativeArray(), 
                 commandBuffer);

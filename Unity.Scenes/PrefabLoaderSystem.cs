@@ -31,12 +31,16 @@ namespace ZG
         public NativeList<EntityPrefabReference> unloaded;
         public NativeList<EntityPrefabReference> loaded;
         public NativeList<EntityPrefabReference> inProgress;
+        public uint releaseVersion;
+        public bool isReleaseComplete;
 
         public PrefabLoaderReferences(AllocatorManager.AllocatorHandle allocator)
         {
             unloaded = new NativeList<EntityPrefabReference>(allocator);
             loaded = new NativeList<EntityPrefabReference>(allocator);
             inProgress = new NativeList<EntityPrefabReference>(allocator);
+            releaseVersion = 0;
+            isReleaseComplete = true;
         }
 
         public void Dispose()
@@ -596,7 +600,8 @@ namespace ZG
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            var references = SystemAPI.GetSingletonRW<PrefabLoaderReferences>().ValueRW;
+            var referencesRW = SystemAPI.GetSingletonRW<PrefabLoaderReferences>();
+            var references = referencesRW.ValueRW;
             references.unloaded.Clear();
 
             state.CompleteDependency();
@@ -667,7 +672,60 @@ namespace ZG
             collect.entities = entities;
             collect.RunByRef();
 
+            if (isReleaseAllRightNow)
+                unchecked
+                {
+                    ++references.releaseVersion;
+                }
+
+            references.isReleaseComplete = __pendingUnloads.IsEmpty;
+            referencesRW.ValueRW = references;
+
             var entityManager = state.EntityManager;
+            if (isReleaseAllRightNow &&
+                !__prefabLoadRequestQuery.IsEmptyIgnoreFilter)
+            {
+                // Instantiated level entities can inherit RequestEntityPrefabLoaded
+                // from a loaded prefab root. Those extra requesters keep this
+                // loader's released GUIDs alive until the Unity scene is destroyed,
+                // while the scene transition is waiting for this release to finish.
+                // Break that cycle without touching requests for unrelated GUIDs.
+                using var requestEntities =
+                    __prefabLoadRequestQuery.ToEntityArray(Allocator.Temp);
+                using var requests =
+                    __prefabLoadRequestQuery
+                        .ToComponentDataArray<RequestEntityPrefabLoaded>(
+                            Allocator.Temp);
+                using var releasedRequestEntities =
+                    new NativeList<Entity>(requestEntities.Length, Allocator.Temp);
+                for (int requestIndex = 0;
+                     requestIndex < requests.Length;
+                     ++requestIndex)
+                {
+                    var reference = requests[requestIndex].Prefab;
+                    for (int pendingIndex = 0;
+                         pendingIndex < __pendingUnloads.Length;
+                         ++pendingIndex)
+                    {
+                        if (__pendingUnloads[pendingIndex].reference != reference)
+                            continue;
+
+                        releasedRequestEntities.Add(requestEntities[requestIndex]);
+                        break;
+                    }
+                }
+
+                if (!releasedRequestEntities.IsEmpty)
+                {
+                    var releasedRequestEntityArray =
+                        releasedRequestEntities.AsArray();
+                    entityManager.RemoveComponent<RequestEntityPrefabLoaded>(
+                        releasedRequestEntityArray);
+                    entityManager.RemoveComponent<PrefabLoadResult>(
+                        releasedRequestEntityArray);
+                }
+            }
+
             if (!entities.IsEmpty)
                 entityManager.DestroyEntity(entities.AsArray());
 

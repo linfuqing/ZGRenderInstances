@@ -27,6 +27,7 @@ namespace ZG
 
         public readonly int Index;
         public readonly int Length;
+        public readonly int BaseByteOffset;
         
         [NativeDisableUnsafePtrRestriction] 
         private readonly unsafe UnsafeList<int>* __byteOffset;
@@ -40,16 +41,19 @@ namespace ZG
             int alignment, 
             int stride, 
             int index,
+            int baseByteOffset,
             ref NativeList<int> byteOffset,
             ref NativeArray<byte> bytes)
         {
-            Alignment = alignment;
+            Alignment = Math.Max(alignment, 1);
 
             Stride = stride;
 
             Index = index;
 
             Length = bytes.Length;
+
+            BaseByteOffset = baseByteOffset;
             
             byteOffset[index] = 0;
 
@@ -64,14 +68,16 @@ namespace ZG
             int numBytes = stride * count, bytesToOffset = (numBytes + Alignment - 1) / Alignment * Alignment, 
                 length = Interlocked.Add(ref __byteOffset->ElementAt(Index), bytesToOffset);
             
-            byteOffset = length - bytesToOffset;
+            int localByteOffset = length - bytesToOffset;
 
-            UnityEngine.Assertions.Assert.IsFalse(byteOffset + numBytes > Length);
+            UnityEngine.Assertions.Assert.IsFalse(localByteOffset + numBytes > Length);
             //if(length > Length)
             //    UnityEngine.Debug.LogError($"RenderConstantBuffer: {length} out of {Length}");
 
+            byteOffset = BaseByteOffset + localByteOffset;
+
             return CollectionHelper.ConvertExistingDataToNativeArray<byte>(
-                __bytes + byteOffset, 
+                __bytes + localByteOffset, 
                 numBytes, 
                 Allocator.None,
                 true);
@@ -86,7 +92,7 @@ namespace ZG
             int offset = length - bytesToOffset;
             UnsafeUtility.MemCpy(__bytes + offset, bytes.GetUnsafeReadOnlyPtr(), numBytes);
 
-            return offset;
+            return BaseByteOffset + offset;
         }
     }
 }
