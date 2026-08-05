@@ -494,7 +494,10 @@ namespace ZG
                         constantBufferOffsetAlignment,
                         stride);
                     if (useConstantBufferRange)
+                    {
+                        count = math.ceilpow2(count);
                         count = math.max(count, MinComputeBufferCount);
+                    }
 
                     if (__computeBufferStrideToIndices.TryGetValue(
                             stride,
